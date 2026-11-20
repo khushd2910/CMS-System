@@ -27,7 +27,7 @@ router.patch("/:id", authenticate, requireRole("admin"), async (req, res, next) 
         const department = await Department.findByIdAndUpdate(
             req.params.id,
             { $set: req.body },
-            { new: true, runValidators: true }
+            { returnDocument: "after", runValidators: true }
         );
         if (!department) {
             return res.status(404).json({ message: "Department not found." });
