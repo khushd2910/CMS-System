@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const { User, Department } = require("../models");
+const { getPagination, paginationMeta } = require("../utils/pagination");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -21,11 +22,22 @@ const listUsers = async (req, res, next) => {
             }
             filter.role = req.query.role;
         }
+        if (req.query.search) {
+            const escapedSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filter.$or = [
+                { name: { $regex: escapedSearch, $options: "i" } },
+                { email: { $regex: escapedSearch, $options: "i" } },
+            ];
+        }
+        const pagination = getPagination(req.query);
+        const total = await User.countDocuments(filter);
         const users = await User.find(filter)
             .select("-password")
             .populate("departmentId", "name isActive")
-            .sort({ createdAt: -1 });
-        return res.json({ users });
+            .sort({ createdAt: -1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        return res.json({ users, pagination: paginationMeta(pagination, total) });
     } catch (error) {
         return next(error);
     }

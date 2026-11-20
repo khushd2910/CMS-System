@@ -1,9 +1,22 @@
 const { Department } = require("../models");
+const { getPagination, paginationMeta } = require("../utils/pagination");
 
 const listDepartments = async (req, res, next) => {
     try {
-        const departments = await Department.find({ isActive: true }).sort({ name: 1 });
-        return res.json({ departments });
+        const filter = {};
+        if (req.query.active === "true") filter.isActive = true;
+        if (req.query.active === "false") filter.isActive = false;
+        if (req.query.search) {
+            const escapedSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filter.name = { $regex: escapedSearch, $options: "i" };
+        }
+        const pagination = getPagination(req.query);
+        const total = await Department.countDocuments(filter);
+        const departments = await Department.find(filter)
+            .sort({ name: 1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        return res.json({ departments, pagination: paginationMeta(pagination, total) });
     } catch (error) {
         return next(error);
     }

@@ -26,6 +26,17 @@ const errorHandler = (error, req, res, next) => {
             : "Attachment upload failed." });
     }
 
+    if (error.message && [
+        "Only JPG, PNG, WEBP, and PDF attachments are allowed.",
+        "An attachment file is required.",
+    ].includes(error.message)) {
+        return res.status(400).json({ message: error.message });
+    }
+
+    if (error.http_code) {
+        return res.status(502).json({ message: "External storage service is unavailable." });
+    }
+
     console.error(error);
     return res.status(500).json({ message: "An unexpected server error occurred." });
 };

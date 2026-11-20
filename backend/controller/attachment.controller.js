@@ -1,6 +1,7 @@
 const multer = require("multer");
 const cloudinary = require("../config/cloudinary");
 const { Attachment, Grievance } = require("../models");
+const { getPagination, paginationMeta } = require("../utils/pagination");
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -37,10 +38,15 @@ const listAttachments = async (req, res, next) => {
         if (!canManage(grievance, req.user)) {
             return res.status(403).json({ message: "You are not authorized to view these attachments." });
         }
+        const pagination = getPagination(req.query);
+        const filter = { grievanceId: grievance._id };
+        const total = await Attachment.countDocuments(filter);
         const attachments = await Attachment.find({ grievanceId: grievance._id })
             .populate("uploadedBy", "name role")
-            .sort({ uploadedAt: -1 });
-        return res.json({ attachments });
+            .sort({ uploadedAt: -1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        return res.json({ attachments, pagination: paginationMeta(pagination, total) });
     } catch (error) {
         return next(error);
     }

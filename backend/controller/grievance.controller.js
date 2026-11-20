@@ -1,5 +1,6 @@
 const { Grievance, StatusHistory, Department, User, Notification } = require("../models");
 const { sendGrievanceStatusEmail } = require("../utils/email");
+const { getPagination, paginationMeta } = require("../utils/pagination");
 
 const statuses = ["submitted", "under_review", "in_progress", "resolved", "rejected", "closed"];
 
@@ -51,12 +52,46 @@ const listGrievances = async (req, res, next) => {
                 : req.user.role === "officer"
                   ? { $or: [{ assignedOfficerId: req.user._id }, { departmentId: req.user.departmentId }] }
                   : {};
+        if (req.query.status) {
+            if (!statuses.includes(req.query.status)) {
+                return res.status(400).json({ message: "Invalid grievance status filter." });
+            }
+            filter.status = req.query.status;
+        }
+        if (req.query.priority && ["low", "medium", "high", "urgent"].includes(req.query.priority)) {
+            filter.priority = req.query.priority;
+        }
+        if (req.query.priority && !["low", "medium", "high", "urgent"].includes(req.query.priority)) {
+            return res.status(400).json({ message: "Invalid grievance priority filter." });
+        }
+        if (req.query.category) filter.category = req.query.category;
+        if (req.query.departmentId) filter.departmentId = req.query.departmentId;
+        if (req.query.search) {
+            const escapedSearch = req.query.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filter.$and = [
+                ...(filter.$and || []),
+                {
+                    $or: [
+                        { referenceNumber: { $regex: escapedSearch, $options: "i" } },
+                        { title: { $regex: escapedSearch, $options: "i" } },
+                        { description: { $regex: escapedSearch, $options: "i" } },
+                    ],
+                },
+            ];
+        }
+        const pagination = getPagination(req.query);
+        const total = await Grievance.countDocuments(filter);
         const grievances = await Grievance.find(filter)
             .populate("citizenId", "name email mobileNo")
             .populate("departmentId", "name")
             .populate("assignedOfficerId", "name email")
-            .sort({ createdAt: -1 });
-        return res.json({ grievances });
+            .sort({ createdAt: -1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        return res.json({
+            grievances,
+            pagination: paginationMeta(pagination, total),
+        });
     } catch (error) {
         return next(error);
     }
@@ -78,6 +113,27 @@ const getGrievance = async (req, res, next) => {
             .populate("changedBy", "name role")
             .sort({ createdAt: -1 });
         return res.json({ grievance, history });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+const getGrievanceHistory = async (req, res, next) => {
+    try {
+        const grievance = await Grievance.findById(req.params.id);
+        if (!grievance) {
+            return res.status(404).json({ message: "Grievance not found." });
+        }
+        if (!canView(grievance, req.user)) {
+            return res.status(403).json({ message: "You are not authorized to view this grievance audit." });
+        }
+        const history = await StatusHistory.find({ grievanceId: grievance._id })
+            .populate("changedBy", "name role email")
+            .sort({ createdAt: -1 });
+        return res.json({
+            referenceNumber: grievance.referenceNumber,
+            history,
+        });
     } catch (error) {
         return next(error);
     }
@@ -133,4 +189,10 @@ const updateGrievanceStatus = async (req, res, next) => {
     }
 };
 
-module.exports = { createGrievance, listGrievances, getGrievance, updateGrievanceStatus };
+module.exports = {
+    createGrievance,
+    listGrievances,
+    getGrievance,
+    getGrievanceHistory,
+    updateGrievanceStatus,
+};
