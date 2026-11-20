@@ -20,6 +20,12 @@ const errorHandler = (error, req, res, next) => {
         return res.status(400).json({ message: `Invalid ${error.path}.` });
     }
 
+    if (error.name === "MulterError") {
+        return res.status(400).json({ message: error.code === "LIMIT_FILE_SIZE"
+            ? "Attachment exceeds the 10 MB limit."
+            : "Attachment upload failed." });
+    }
+
     console.error(error);
     return res.status(500).json({ message: "An unexpected server error occurred." });
 };

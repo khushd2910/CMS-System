@@ -65,4 +65,24 @@ const sendGrievanceStatusEmail = async ({ citizenEmail, citizenName, referenceNu
     return sendEmail({ to: citizenEmail, subject, text, html });
 };
 
-module.exports = { sendEmail, sendGrievanceStatusEmail };
+const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
+    const subject = "Reset your Grievance System password";
+    const text = [
+        `Hello ${name || "User"},`,
+        "",
+        "We received a request to reset your password.",
+        `Reset it within 30 minutes using this link: ${resetUrl}`,
+        "",
+        "If you did not request this, you can ignore this email.",
+    ].join("\n");
+    const html = `
+        <p>Hello ${name || "User"},</p>
+        <p>We received a request to reset your password.</p>
+        <p><a href="${resetUrl}">Reset my password</a></p>
+        <p>This link expires in 30 minutes. If you did not request this, ignore this email.</p>
+    `;
+
+    return sendEmail({ to: email, subject, text, html });
+};
+
+module.exports = { sendEmail, sendGrievanceStatusEmail, sendPasswordResetEmail };

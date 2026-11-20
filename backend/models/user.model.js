@@ -29,6 +29,14 @@ const userSchema = new mongoose.Schema(
             required: true,
             select: false,
         },
+        passwordResetTokenHash: {
+            type: String,
+            select: false,
+        },
+        passwordResetExpires: {
+            type: Date,
+            select: false,
+        },
         departmentId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Department",
