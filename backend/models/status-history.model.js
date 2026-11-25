@@ -25,6 +25,17 @@ const statusHistorySchema = new mongoose.Schema({
         type: String,
         trim: true,
     },
+    // What kind of change this entry records. Older entries without it are status changes.
+    action: {
+        type: String,
+        enum: ["status_changed", "department_assigned", "priority_changed"],
+        default: "status_changed",
+    },
+    // Readable detail for non-status changes, e.g. "Department: Water Supply".
+    details: {
+        type: String,
+        trim: true,
+    },
     createdAt: {
         type: Date,
         default: Date.now,

@@ -11,12 +11,20 @@ const getSecret = () => {
 
 const authenticate = async (req, res, next) => {
     try {
-        const header = req.headers.authorization;
-        if (!header || !header.startsWith("Bearer ")) {
+        const header = req.get("authorization");
+        if (!header) {
             return res.status(401).json({ message: "Authentication token is required." });
         }
 
-        const token = header.slice("Bearer ".length);
+        const [scheme, credential] = header.trim().split(/\s+/, 2);
+        if (!scheme || scheme.toLowerCase() !== "bearer" || !credential) {
+            return res.status(401).json({ message: "Use Authorization: Bearer <token>." });
+        }
+
+        const token = credential.trim();
+        if (!token) {
+            return res.status(401).json({ message: "Authentication token is required." });
+        }
         const payload = jwt.verify(token, getSecret());
         const user = await User.findById(payload.userId).select("-password");
 
@@ -43,4 +51,17 @@ const requireRole = (...roles) => (req, res, next) => {
     return next();
 };
 
-module.exports = { authenticate, requireRole, getSecret };
+const requireSelfOrRole = (userIdParam, ...roles) => (req, res, next) => {
+    const requestedUserId = req.params[userIdParam];
+    const isSelf =
+        Boolean(req.user) &&
+        Boolean(requestedUserId) &&
+        req.user._id.equals(requestedUserId);
+    if (isSelf || (req.user && roles.includes(req.user.role))) {
+        return next();
+    }
+
+    return res.status(403).json({ message: "You are not authorized for this action." });
+};
+
+module.exports = { authenticate, requireRole, requireSelfOrRole, getSecret };

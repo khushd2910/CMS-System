@@ -21,6 +21,11 @@ const attachmentSchema = new mongoose.Schema({
         required: true,
         trim: true,
     },
+    publicId: {
+        type: String,
+        required: true,
+        trim: true,
+    },
     fileType: {
         type: String,
         trim: true,

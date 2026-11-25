@@ -4,7 +4,7 @@ const userSchema = new mongoose.Schema(
     {
         role: {
             type: String,
-            enum: ["citizen", "admin", "officer"],
+            enum: ["citizen", "admin", "manager"],
             required: true,
             default: "citizen",
         },
@@ -27,6 +27,14 @@ const userSchema = new mongoose.Schema(
         password: {
             type: String,
             required: true,
+            select: false,
+        },
+        passwordResetTokenHash: {
+            type: String,
+            select: false,
+        },
+        passwordResetExpires: {
+            type: Date,
             select: false,
         },
         departmentId: {

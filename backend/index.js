@@ -7,6 +7,9 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/auth.routes");
 const departmentRoutes = require("./routes/department.routes");
 const grievanceRoutes = require("./routes/grievance.routes");
+const adminRoutes = require("./routes/admin.routes");
+const attachmentRoutes = require("./routes/attachment.routes");
+const notificationRoutes = require("./routes/notification.routes");
 const errorHandler = require("./middleware/error-handler");
 
 const app=express();
@@ -19,6 +22,9 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/grievances", grievanceRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api", attachmentRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3000;

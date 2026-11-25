@@ -21,7 +21,7 @@ const seed = async () => {
             Department.findOneAndUpdate(
                 { name },
                 { $set: { isActive: true }, $setOnInsert: { name } },
-                { new: true, upsert: true, runValidators: true }
+                { returnDocument: "after", upsert: true, runValidators: true }
             )
         )
     );
@@ -37,7 +37,7 @@ const seed = async () => {
             },
         },
         {
-            new: true,
+            returnDocument: "after",
             upsert: true,
             runValidators: true,
             setDefaultsOnInsert: true,

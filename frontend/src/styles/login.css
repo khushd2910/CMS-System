@@ -1,0 +1,130 @@
+/* Login page layout: form card on the left, information on the right. */
+.login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.login-form {
+  margin-top: 20px;
+}
+
+/* The inset "Sign-in details" panel mirrors the section boxes in the wireframe. */
+.panel {
+  min-width: 0;
+  margin: 16px 0 0;
+  padding: 4px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #fff;
+}
+
+.login-form > .alert + .panel {
+  margin-top: 12px;
+}
+
+.panel__title {
+  padding-inline: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-top: 12px;
+  float: left; /* keeps the legend inside the box, like the wireframe */
+  width: 100%;
+}
+
+.panel__title + .field {
+  clear: both;
+  margin-top: 12px;
+}
+
+.login-form__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 16px;
+}
+
+.login-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.login-form__register {
+  margin-top: 20px;
+  color: var(--text-muted);
+}
+
+.login-form__register a {
+  font-weight: 500;
+}
+
+/* ---------- Side column ---------- */
+.login-aside {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--panel-soft);
+}
+
+.login-aside .card--soft {
+  border: 0;
+  border-radius: 0;
+}
+
+.check-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.check-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.check-list svg {
+  flex: none;
+  color: var(--navy);
+}
+
+.notice {
+  display: flex;
+  gap: 14px;
+  padding: 20px 24px;
+  background: var(--info);
+  color: #14283d;
+}
+
+.notice__icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--navy);
+}
+
+.notice p + p {
+  margin-top: 10px;
+  font-size: 0.925rem;
+}
+
+@media (max-width: 900px) {
+  .login-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .panel {
+    padding-inline: 14px;
+  }
+  .login-form__actions .btn {
+    flex: 1 1 140px;
+  }
+}

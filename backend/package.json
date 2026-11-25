@@ -17,7 +17,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "test": "node tests/workflow.test.js",
+    "test-email": "node scripts/test-email.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
