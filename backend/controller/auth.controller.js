@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { User } = require("../models");
 const { getSecret } = require("../middleware/auth");
-const { sendPasswordResetEmail } = require("../utils/email");
+const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/email");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
 const { isLocked, recordFailure, clearFailures } = require("../utils/login-throttle");
 
@@ -20,6 +20,41 @@ const createToken = (user) =>
     jwt.sign({ userId: user._id.toString(), role: user.role }, getSecret(), {
         expiresIn: process.env.JWT_EXPIRES_IN || "1d",
     });
+
+// A real bcrypt hash compared against when the account does not exist, so a missing account
+// takes as long to reject as a wrong password (no account-enumeration through timing).
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
+
+const requireEmailVerification = () => process.env.REQUIRE_EMAIL_VERIFICATION === "true";
+const smtpConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+
+// Email = contains "@"; otherwise a 10-digit Indian mobile number. Returns a MongoDB filter, or null.
+const identifierQuery = (identifier) => {
+    if (identifier.includes("@")) return { email: identifier.toLowerCase() };
+    const mobile = normalizeMobile(identifier);
+    return /^[6-9]\d{9}$/.test(mobile) ? { mobileNo: mobile } : null;
+};
+
+const newVerificationToken = () => {
+    const token = crypto.randomBytes(32).toString("hex");
+    return {
+        token,
+        hash: crypto.createHash("sha256").update(token).digest("hex"),
+        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    };
+};
+
+// Sends the verification link. Without SMTP it is only printed to the server console, and only outside production.
+const deliverVerification = ({ email, name, token }) => {
+    const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
+    const verifyUrl = `${clientUrl}/verify-email/${token}`;
+    if (smtpConfigured()) {
+        sendVerificationEmail({ email, name, verifyUrl })
+            .catch((error) => console.error(`Verification email failed: ${error.message}`));
+    } else if (process.env.NODE_ENV !== "production") {
+        console.info(`[dev] SMTP not configured. Verification link for ${email}: ${verifyUrl}`);
+    }
+};
 
 const GENDERS = ["male", "female", "other", "prefer_not_to_say"];
 const LANGUAGES = ["en", "hi", "gu"];
@@ -101,13 +136,50 @@ const register = async (req, res, next) => {
             };
         }
 
+        const duplicate = await User.findOne({
+            $or: [{ email: normalizedEmail }, ...(profile.mobileNo ? [{ mobileNo: profile.mobileNo }] : [])],
+        }).select("email");
+        if (duplicate) {
+            const sameEmail = duplicate.email === normalizedEmail;
+            return res.status(409).json({
+                message: sameEmail
+                    ? "An account with this email address already exists."
+                    : "An account with this mobile number already exists.",
+                code: sameEmail ? "EMAIL_EXISTS" : "MOBILE_EXISTS",
+            });
+        }
+
+        const mustVerify = requireEmailVerification();
+        if (mustVerify && !smtpConfigured() && process.env.NODE_ENV === "production") {
+            return res.status(503).json({
+                message: "Email service is not available. Please try again later.",
+                code: "EMAIL_UNAVAILABLE",
+            });
+        }
+        const verification = mustVerify ? newVerificationToken() : null;
+
         const user = await User.create({
             name: normalizedName,
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
             role: "citizen",
             ...profile,
+            ...(verification && {
+                emailVerified: false,
+                emailVerificationTokenHash: verification.hash,
+                emailVerificationExpires: verification.expires,
+            }),
         });
+
+        if (verification) {
+            // No token is issued yet: the citizen signs in after confirming their email.
+            deliverVerification({ email: user.email, name: user.name, token: verification.token });
+            return res.status(201).json({
+                message: "Registration successful. Check your email to verify your address before signing in.",
+                requiresVerification: true,
+                user: publicUser(user),
+            });
+        }
         return res.status(201).json(authResponse(user));
     } catch (error) {
         return next(error);
@@ -116,17 +188,80 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
     try {
-        const { email, password } = req.body || {};
-        const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-        if (!normalizedEmail || typeof password !== "string") {
-            return res.status(400).json({ message: "email and password are required." });
+        // "identifier" is an email address or a 10-digit mobile number. "email" is still accepted
+        // so older clients keep working.
+        const raw = req.body?.identifier ?? req.body?.email;
+        const identifier = typeof raw === "string" ? raw.trim() : "";
+        const { password } = req.body || {};
+        if (!identifier || typeof password !== "string" || !password) {
+            return res.status(400).json({ message: "Email or mobile number and password are required." });
         }
 
-        const user = await User.findOne({ email: normalizedEmail }).select("+password");
-        if (!user || !(await bcrypt.compare(password, user.password))) {
-            return res.status(401).json({ message: "Invalid email or password." });
+        const query = identifierQuery(identifier);
+        const user = query ? await User.findOne(query).select("+password") : null;
+        const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+
+        // This is the CITIZEN sign-in. Admin and manager accounts have their own endpoints (with CAPTCHA),
+        // so here they get exactly the same answer as a wrong password: nothing reveals that the account
+        // exists or what role it has.
+        if (!user || !passwordOk || user.role !== "citizen") {
+            return res.status(401).json({ message: "Invalid email or password.", code: "INVALID_CREDENTIALS" });
+        }
+
+        // Only said AFTER the correct password, so it does not reveal accounts to a stranger.
+        if (user.emailVerified === false) {
+            return res.status(403).json({
+                message: "Please verify your email address before signing in.",
+                code: "EMAIL_NOT_VERIFIED",
+            });
         }
         return res.json(authResponse(user));
+    } catch (error) {
+        return next(error);
+    }
+};
+
+const verifyEmail = async (req, res, next) => {
+    try {
+        const token = typeof req.params.token === "string" ? req.params.token : "";
+        const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+        const user = await User.findOne({
+            emailVerificationTokenHash: tokenHash,
+            emailVerificationExpires: { $gt: new Date() },
+        }).select("+emailVerificationTokenHash +emailVerificationExpires");
+        if (!token || !user) {
+            return res.status(400).json({ message: "Verification link is invalid or has expired." });
+        }
+        // Safe to repeat: opening the same link twice (or a browser pre-loading it) still ends "verified".
+        user.emailVerified = true;
+        await user.save();
+        return res.json({ message: "Your email address has been verified. You can now sign in." });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+const resendVerification = async (req, res, next) => {
+    const generic = {
+        message: "If this account is waiting for email verification, a new verification email has been sent.",
+    };
+    try {
+        const raw = req.body?.identifier;
+        const identifier = typeof raw === "string" ? raw.trim() : "";
+        const query = identifier ? identifierQuery(identifier) : null;
+        const throttleKey = `resend:${identifier.toLowerCase()}`;
+        if (!query || isLocked(req.ip, throttleKey)) return res.json(generic);
+        recordFailure(req.ip, throttleKey); // every request counts: at most 5 per 15 minutes
+
+        const user = await User.findOne(query).select("+emailVerificationTokenHash +emailVerificationExpires");
+        if (user && user.role === "citizen" && user.emailVerified === false && requireEmailVerification()) {
+            const verification = newVerificationToken();
+            user.emailVerificationTokenHash = verification.hash;
+            user.emailVerificationExpires = verification.expires;
+            await user.save();
+            deliverVerification({ email: user.email, name: user.name, token: verification.token });
+        }
+        return res.json(generic); // same answer whether or not the account exists
     } catch (error) {
         return next(error);
     }
@@ -202,10 +337,6 @@ const resetPassword = async (req, res, next) => {
 
 // ---------- Admin login (CAPTCHA + admin-only) ----------
 
-// A real bcrypt hash compared against when the account does not exist, so a missing account
-// takes as long to reject as a wrong password (no account-enumeration through timing).
-const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
-
 const getCaptcha = (req, res) => {
     res.set("Cache-Control", "no-store");
     return res.json(createCaptcha());
@@ -261,4 +392,5 @@ const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password
 
 module.exports = {
     register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
+    verifyEmail, resendVerification,
 };

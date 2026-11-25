@@ -20,6 +20,7 @@
     "seed": "node scripts/seed.js",
     "test": "node tests/workflow.test.js",
     "test:unit": "node tests/admin-login-utils.test.js",
+    "test:citizen": "node tests/citizen-auth.test.js",
     "test-email": "node scripts/test-email.js"
   },
   "dependencies": {

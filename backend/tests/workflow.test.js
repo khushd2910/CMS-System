@@ -12,6 +12,7 @@ if (!/test/i.test(process.env.MONGO_DB_NAME)) {
 
 const assert = require("node:assert/strict");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const connectDB = require("../config/db");
 const { app } = require("../index");
@@ -26,7 +27,11 @@ const call = async (method, path, token, body) => {
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
 };
-const login = async (email) => (await call("POST", "/api/auth/login", null, { email, password: "Passw0rd!" })).body.token;
+// /api/auth/login is citizen-only now (staff use CAPTCHA-protected endpoints), so staff tokens are signed directly.
+const login = async (email) => {
+    const user = await User.findOne({ email });
+    return jwt.sign({ userId: user._id.toString(), role: user.role }, process.env.JWT_SECRET, { expiresIn: "1h" });
+};
 
 let passed = 0;
 const check = async (name, fn) => {

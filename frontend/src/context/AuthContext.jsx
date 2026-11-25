@@ -34,14 +34,15 @@ export function AuthProvider({ children }) {
     return () => controller.abort();
   }, []);
 
-  const login = useCallback(async ({ email, password, remember }) => {
-    const { user: loggedInUser, token } = await authService.login({ email, password });
+  const login = useCallback(async ({ identifier, password, remember }) => {
+    const { user: loggedInUser, token } = await authService.login({ identifier, password });
 
     // This page is the *citizen* login. A staff account is rejected before
     // anything is saved, so no session is created for it.
     if (!CITIZEN_PORTAL_ROLES.includes(loggedInUser.role)) {
-      const error = new Error("This page is for citizens only.");
-      error.code = "NOT_CITIZEN";
+      // Same outcome as a wrong password, so nothing reveals what kind of account this is.
+      const error = new Error("Invalid credentials.");
+      error.status = 401;
       throw error;
     }
 
@@ -79,11 +80,13 @@ export function AuthProvider({ children }) {
   // The backend signs a new citizen in as part of registration, so we keep that
   // behaviour: save the token for this browser session and mark the person as signed in.
   const register = useCallback(async (payload) => {
-    const { user: newUser, token } = await authService.register(payload);
-    tokenStorage.set(token, false);
-    setUser(newUser);
+    const result = await authService.register(payload);
+    // With email verification switched on, the backend sends no token: the citizen must verify first.
+    if (result.requiresVerification) return { requiresVerification: true };
+    tokenStorage.set(result.token, false);
+    setUser(result.user);
     setStatus("authenticated");
-    return newUser;
+    return { requiresVerification: false };
   }, []);
 
   const logout = useCallback(async () => {

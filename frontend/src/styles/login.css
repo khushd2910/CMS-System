@@ -128,3 +128,16 @@
     flex: 1 1 140px;
   }
 }
+
+/* "Resend verification email" block under the sign-in error */
+.info-line {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 8px 0 4px;
+}
+
+.info-line p {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}

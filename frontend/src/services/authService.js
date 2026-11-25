@@ -2,10 +2,19 @@ import { request } from "./apiClient";
 
 // One function per backend endpoint (see backend/routes/auth.routes.js).
 export const authService = {
+  // Citizen sign-in. identifier = email address or 10-digit mobile number.
   // -> { user: {id, role, name, mobileNo, email, departmentId}, token, tokenType, expiresIn }
-  login: ({ email, password }) => request("/auth/login", { method: "POST", body: { email, password } }),
+  login: ({ identifier, password }) => request("/auth/login", { method: "POST", body: { identifier, password } }),
 
-  // -> same shape as login (the backend signs the new citizen in). Status 409 = email already registered.
+  // -> { message }. Single-use-safe: opening the same link twice still succeeds.
+  verifyEmail: (token) => request(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST" }),
+
+  // -> { message }. The answer is the same whether or not the account exists.
+  resendVerification: ({ identifier }) =>
+    request("/auth/resend-verification", { method: "POST", body: { identifier } }),
+
+  // -> same shape as login (signed in at once), OR { requiresVerification: true } with no token when the
+  //    backend requires email verification. Status 409: serverCode EMAIL_EXISTS or MOBILE_EXISTS.
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
 
   // -> { id, image (SVG data URI), expiresInSeconds }. Each CAPTCHA works once.

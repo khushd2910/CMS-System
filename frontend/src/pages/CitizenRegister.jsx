@@ -8,7 +8,7 @@ import SelectField from "../components/ui/SelectField";
 import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
-import { CITIZEN_HOME_PATH } from "../config/auth.config";
+import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
 import { LOCATIONS } from "../data/locations";
 import {
   normalizeMobile,
@@ -76,13 +76,20 @@ function validateField(name, form) {
 function describeRegisterError(error) {
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
-  if (error.status === 409) return "An account with this email address already exists. Try signing in instead.";
+  if (error.status === 409 && error.serverCode === "MOBILE_EXISTS") {
+    return "An account with this mobile number already exists. Try signing in instead.";
+  }
+  if (error.status === 409 && error.serverCode === "EMAIL_EXISTS") {
+    return "An account with this email address already exists. Try signing in instead.";
+  }
+  if (error.status === 409) return "An account with these details already exists. Try signing in instead.";
+  if (error.status === 503) return "The email service is unavailable right now. Please try again later.";
   if (error.status === 400) return error.message;
   return "The service is temporarily unavailable. Please try again in a few minutes.";
 }
 
 export default function CitizenRegister() {
-  const { status, register } = useAuth();
+  const { status, user, register } = useAuth();
   const navigate = useNavigate();
 
   const [form, setForm] = useState(EMPTY_FORM);
@@ -90,6 +97,7 @@ export default function CitizenRegister() {
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   const firstFieldRef = useRef(null);
 
   const districts = useMemo(() => Object.keys(LOCATIONS[form.state] || {}), [form.state]);
@@ -97,7 +105,7 @@ export default function CitizenRegister() {
   const strength = passwordStrength(form.password);
 
   // Already signed in (and not just finished registering)? Go to the citizen area.
-  if (status === "authenticated" && !done) return <Navigate to={CITIZEN_HOME_PATH} replace />;
+  if (status === "authenticated" && !done) return <Navigate to={homePathForRole(user?.role)} replace />;
 
   function update(changes) {
     const next = { ...form, ...changes };
@@ -151,7 +159,7 @@ export default function CitizenRegister() {
 
     setSubmitting(true);
     try {
-      await register({
+      const result = await register({
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
@@ -169,6 +177,7 @@ export default function CitizenRegister() {
           pinCode: form.pin.trim(),
         },
       });
+      setNeedsVerification(Boolean(result?.requiresVerification));
       setDone(true);
     } catch (error) {
       setFormError(describeRegisterError(error));
@@ -184,16 +193,23 @@ export default function CitizenRegister() {
         <section className="card register-success" aria-labelledby="success-heading">
           <CircleCheck className="register-success__icon" size={44} aria-hidden="true" />
           <h1 className="card__title" id="success-heading" tabIndex={-1} ref={(node) => node?.focus()}>
-            Registration Successful
+            {needsVerification ? "Verify Your Email" : "Registration Successful"}
           </h1>
           <p className="card__subtitle" role="status">
-            Your citizen account has been created and you are signed in. You can now submit grievances and
-            track their progress.
+            {needsVerification
+              ? `Your account has been created. We sent a verification link to ${form.email.trim()}. Open it to activate your account, then sign in.`
+              : "Your citizen account has been created and you are signed in. You can now submit grievances and track their progress."}
           </p>
           <div className="login-form__actions">
-            <Button type="button" onClick={() => navigate(CITIZEN_HOME_PATH, { replace: true })}>
-              Go to Dashboard
-            </Button>
+            {needsVerification ? (
+              <Button type="button" onClick={() => navigate("/login", { replace: true })}>
+                Go to Login
+              </Button>
+            ) : (
+              <Button type="button" onClick={() => navigate(CITIZEN_HOME_PATH, { replace: true })}>
+                Go to Dashboard
+              </Button>
+            )}
           </div>
         </section>
       </PortalLayout>

@@ -66,7 +66,8 @@ const createUser = async (req, res, next) => {
 
         const user = await User.create({
             name: normalizedName,
-            mobileNo,
+            // An empty string would clash with the unique mobile index, so it is stored as "no number".
+            mobileNo: typeof mobileNo === "string" && mobileNo.trim() ? mobileNo.trim() : undefined,
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
             role,
@@ -92,7 +93,9 @@ const updateUser = async (req, res, next) => {
             user.role = updates.role;
         }
         if (updates.name !== undefined) user.name = updates.name;
-        if (updates.mobileNo !== undefined) user.mobileNo = updates.mobileNo;
+        if (updates.mobileNo !== undefined) {
+            user.mobileNo = typeof updates.mobileNo === "string" && updates.mobileNo.trim() ? updates.mobileNo.trim() : undefined;
+        }
         if (updates.departmentId !== undefined) {
             if (updates.departmentId && !(await Department.exists({ _id: updates.departmentId, isActive: true }))) {
                 return res.status(400).json({ message: "Department is not active or does not exist." });

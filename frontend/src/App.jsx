@@ -4,6 +4,7 @@ import CitizenRegister from "./pages/CitizenRegister";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import ManagerLogin from "./pages/ManagerLogin";
+import VerifyEmail from "./pages/VerifyEmail";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import CitizenDashboard from "./pages/CitizenDashboard";
 import ComingSoon from "./pages/ComingSoon";
@@ -21,10 +22,11 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<CitizenLogin />} />
+      <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/citizen/dashboard"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute roles={["citizen"]}>
             <CitizenDashboard />
           </ProtectedRoute>
         }

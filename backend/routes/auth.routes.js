@@ -10,12 +10,16 @@ const {
     getCaptcha,
     adminLogin,
     managerLogin,
+    verifyEmail,
+    resendVerification,
 } = require("../controller/auth.controller");
 
 const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post("/verify-email/:token", verifyEmail);
+router.post("/resend-verification", resendVerification);
 router.get("/captcha", getCaptcha);
 router.post("/admin-login", adminLogin);
 router.post("/manager-login", managerLogin);

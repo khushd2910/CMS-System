@@ -7,7 +7,8 @@ import PasswordField from "../components/ui/PasswordField";
 import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
-import { CITIZEN_HOME_PATH } from "../config/auth.config";
+import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
+import { authService } from "../services/authService";
 import { validateIdentifier, validatePassword } from "../utils/validators";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Citizen Login" }];
@@ -23,8 +24,8 @@ const NO_ERRORS = { identifier: "", password: "" };
 
 // Turns whatever went wrong into one clear sentence for the citizen.
 function describeLoginError(error) {
-  if (error.code === "NOT_CITIZEN") {
-    return "This account is not a citizen account. Please use the sign-in page provided for your role.";
+  if (error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED") {
+    return "Your email address has not been verified yet. Open the verification link we emailed you, or request a new one below.";
   }
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
@@ -34,7 +35,7 @@ function describeLoginError(error) {
 }
 
 export default function CitizenLogin() {
-  const { status, login } = useAuth();
+  const { status, user, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,12 +44,15 @@ export default function CitizenLogin() {
   const [errors, setErrors] = useState(NO_ERRORS);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendState, setResendState] = useState("idle"); // idle | sending | sent | failed
 
   const identifierRef = useRef(null);
   const passwordRef = useRef(null);
 
-  // Already signed in? Go straight to the citizen area.
-  if (status === "authenticated") return <Navigate to={CITIZEN_HOME_PATH} replace />;
+  // Already signed in? Go to the landing page for THIS person's role (a citizen, admin or manager
+  // each has their own), not always the citizen area.
+  if (status === "authenticated") return <Navigate to={homePathForRole(user?.role)} replace />;
 
   const validators = { identifier: validateIdentifier, password: validatePassword };
 
@@ -66,7 +70,19 @@ export default function CitizenLogin() {
     setRemember(false);
     setErrors(NO_ERRORS);
     setFormError("");
+    setNeedsVerification(false);
+    setResendState("idle");
     identifierRef.current?.focus();
+  }
+
+  async function handleResend() {
+    setResendState("sending");
+    try {
+      await authService.resendVerification({ identifier: form.identifier.trim() });
+      setResendState("sent");
+    } catch {
+      setResendState("failed");
+    }
   }
 
   async function handleSubmit(event) {
@@ -74,6 +90,8 @@ export default function CitizenLogin() {
     if (submitting) return;
 
     setFormError("");
+    setNeedsVerification(false);
+    setResendState("idle");
 
     const nextErrors = {
       identifier: validateIdentifier(form.identifier),
@@ -85,11 +103,12 @@ export default function CitizenLogin() {
 
     setSubmitting(true);
     try {
-      await login({ email: form.identifier.trim(), password: form.password, remember });
+      await login({ identifier: form.identifier.trim(), password: form.password, remember });
       // Send the person back to the page they originally wanted, if any.
       navigate(location.state?.from?.pathname || CITIZEN_HOME_PATH, { replace: true });
     } catch (error) {
       setFormError(describeLoginError(error));
+      setNeedsVerification(error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED");
       setForm((current) => ({ ...current, password: "" })); // never keep a wrong password
       setSubmitting(false);
       passwordRef.current?.focus();
@@ -107,6 +126,25 @@ export default function CitizenLogin() {
 
           <form className="login-form" onSubmit={handleSubmit} noValidate>
             {formError && <Alert title="Sign in failed">{formError}</Alert>}
+            {needsVerification && (
+              <div className="info-line">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={resendState === "sending"}
+                  loadingText="Sending…"
+                  onClick={handleResend}
+                >
+                  Resend verification email
+                </Button>
+                {resendState === "sent" && (
+                  <p role="status">If this account is waiting for verification, a new email has been sent.</p>
+                )}
+                {resendState === "failed" && (
+                  <p role="alert">Could not send the email right now. Please try again in a few minutes.</p>
+                )}
+              </div>
+            )}
 
             <fieldset className="panel">
               <legend className="panel__title">Sign-in details</legend>

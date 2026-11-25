@@ -60,3 +60,9 @@ src/
   `pages/ManagerLogin.jsx` are thin wrappers that pass wording, role and endpoint.
 - Calls `POST /api/auth/manager-login` (CAPTCHA from `GET /api/auth/captcha`). Managers sign in with their email
   (`SUPPORTS_MANAGER_ID_LOGIN` in `config/auth.config.js` is false: there is no Manager ID field yet).
+
+## Citizen login / verification notes
+
+- Citizen login sends `{ identifier, password }` (email or mobile). Staff accounts are refused by the backend with the generic wrong-password answer.
+- A signed-in person who opens `/login` or `/register` is sent to their own role's landing page (`homePathForRole`).
+- `/verify-email/:token` completes email verification; the login page offers "Resend verification email" when the backend says the email is unverified.

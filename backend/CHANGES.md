@@ -85,3 +85,16 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - `POST /api/auth/manager-login` (same body and CAPTCHA as admin-login) accepts `role: "manager"` accounts only. Wrong account, wrong password and wrong role all return the same 401 `Invalid Manager ID or Password.`
 - Admin and manager share one handler (`createStaffLogin`) but have separate endpoints and separate lock-out counters (key = role + email).
 - A manager can sign in even if no department is assigned yet; the existing access rules then show them no grievances (`canAccessGrievance`). `POST /api/auth/login` is unchanged and still lets a manager in without a CAPTCHA.
+
+## Citizen login fixes
+- `POST /api/auth/login` is now CITIZEN-ONLY. Body `{ identifier, password }` (`identifier` = email or 10-digit mobile, with or without +91; `{ email }` still works). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). The workflow test now signs staff tokens directly instead of calling `/auth/login`.
+- `User.mobileNo` is unique (sparse). If your database already has duplicate mobile numbers the index cannot be built: fix them first. Numbers saved by the very first version of `register` may be un-normalised (e.g. with spaces) and will not match a mobile login until cleaned to 10 digits.
+- `POST /api/auth/register` returns 409 with `code` `EMAIL_EXISTS` or `MOBILE_EXISTS`.
+
+## Email verification (optional, off by default)
+- Set `REQUIRE_EMAIL_VERIFICATION=true` (and SMTP_* ) to turn it on. Then a new citizen is created with `emailVerified: false`, receives no token, and gets a 24-hour link `CLIENT_URL/verify-email/:token`.
+- `POST /api/auth/verify-email/:token` (repeatable) and `POST /api/auth/resend-verification { identifier }` (generic answer, max 5 per 15 min per IP+identifier).
+- Login returns 403 `EMAIL_NOT_VERIFIED` only after the correct password. Accounts with `emailVerified` unset (all existing ones) are treated as verified.
+- Without SMTP: outside production the link is printed to the server console; in production registration is refused (503) so no unverifiable accounts are created.
+- MOBILE verification is NOT implemented (needs an SMS/OTP provider).
+- Tests: `npm run test:citizen` (needs a test database, wipes it).

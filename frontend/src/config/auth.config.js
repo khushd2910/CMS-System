@@ -1,9 +1,8 @@
 // Small switches that describe what the backend currently supports.
 // Change them here instead of hunting through components.
 
-// POST /api/auth/login currently accepts { email, password } only.
-// Set this to true once the backend can also sign in with a mobile number.
-export const SUPPORTS_MOBILE_LOGIN = false;
+// POST /api/auth/login accepts { identifier, password }, where identifier is an email or a 10-digit mobile number.
+export const SUPPORTS_MOBILE_LOGIN = true;
 
 // Roles allowed to sign in on the Citizen Login page.
 // (admin and manager will get their own sign-in later.)
@@ -30,3 +29,10 @@ export const SUPPORTS_MANAGER_ID_LOGIN = false;
 export const MANAGER_PORTAL_ROLES = ["manager"];
 export const MANAGER_HOME_PATH = "/manager/dashboard";
 export const MANAGER_LOGIN_PATH = "/manager/login";
+
+// Each role's own landing page. Used to send an already signed-in person to the right place.
+export function homePathForRole(role) {
+  if (role === "admin") return ADMIN_HOME_PATH;
+  if (role === "manager") return MANAGER_HOME_PATH;
+  return CITIZEN_HOME_PATH;
+}

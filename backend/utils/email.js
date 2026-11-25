@@ -85,4 +85,24 @@ const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
     return sendEmail({ to: email, subject, text, html });
 };
 
-module.exports = { sendEmail, sendGrievanceStatusEmail, sendPasswordResetEmail };
+const sendVerificationEmail = async ({ email, name, verifyUrl }) => {
+    const subject = "Verify your email for the Grievance System";
+    const text = [
+        `Hello ${name || "Citizen"},`,
+        "",
+        "Thank you for registering. Please confirm your email address within 24 hours using this link:",
+        verifyUrl,
+        "",
+        "If you did not create this account, you can ignore this email.",
+    ].join("\n");
+    const html = `
+        <p>Hello ${name || "Citizen"},</p>
+        <p>Thank you for registering. Please confirm your email address:</p>
+        <p><a href="${verifyUrl}">Verify my email</a></p>
+        <p>This link expires in 24 hours. If you did not create this account, ignore this email.</p>
+    `;
+
+    return sendEmail({ to: email, subject, text, html });
+};
+
+module.exports = { sendEmail, sendGrievanceStatusEmail, sendPasswordResetEmail, sendVerificationEmail };
