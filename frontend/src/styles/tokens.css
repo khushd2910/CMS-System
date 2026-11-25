@@ -1,0 +1,39 @@
+/* Design tokens. Colours were sampled from the wireframe image. */
+:root {
+  /* Brand */
+  --navy: #123a66;          /* header, buttons */
+  --navy-hover: #0d2c4f;
+  --navy-deep: #143151;     /* footer */
+  --cream: #fef5d4;         /* navigation bar */
+  --cream-line: #eadfae;
+  --burgundy: #7b1e2e;      /* page headings, required marks */
+
+  /* Surfaces */
+  --page: #f3f6fb;
+  --panel: #ffffff;
+  --panel-soft: #f9fbf8;    /* pale green-white side panel */
+  --info: #dcecf9;          /* blue security notice */
+  --line: #dde3ec;          /* card borders */
+  --line-strong: #858c96;   /* input borders (3:1 contrast for accessibility) */
+
+  /* Text */
+  --text: #1a2330;
+  --text-muted: #46505e;
+  --link: #14508f;
+  --error: #b3261e;
+  --error-bg: #fdeceb;
+
+  /* Focus ring: blue on light surfaces, cream on dark ones */
+  --focus: #0b57d0;
+
+  --font: "Roboto", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --gutter: 24px;
+}
+
+@media (max-width: 600px) {
+  :root {
+    --gutter: 16px;
+  }
+}

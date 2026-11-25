@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { STATUSES, PRIORITIES } = require("../utils/grievance-rules");
 
 const locationSchema = new mongoose.Schema(
     {
@@ -41,22 +42,26 @@ const grievanceSchema = new mongoose.Schema(
             ref: "User",
             required: true,
         },
+        // Department the citizen asked for (optional hint for the admin).
+        // It gives the department's manager NO access to the grievance.
+        requestedDepartmentId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Department",
+        },
+        // Department that actually handles the grievance. Only an admin sets it
+        // (PATCH /api/grievances/:id/assign-department).
         departmentId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Department",
         },
-        assignedOfficerId: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: "User",
-        },
         status: {
             type: String,
-            enum: ["submitted", "under_review", "in_progress", "resolved", "rejected", "closed"],
+            enum: STATUSES,
             default: "submitted",
         },
         priority: {
             type: String,
-            enum: ["low", "medium", "high", "urgent"],
+            enum: PRIORITIES,
             default: "medium",
         },
         resolvedAt: Date,
@@ -66,6 +71,5 @@ const grievanceSchema = new mongoose.Schema(
 
 grievanceSchema.index({ citizenId: 1, createdAt: -1 });
 grievanceSchema.index({ departmentId: 1, status: 1 });
-grievanceSchema.index({ assignedOfficerId: 1, status: 1 });
 
 module.exports = mongoose.model("Grievance", grievanceSchema);

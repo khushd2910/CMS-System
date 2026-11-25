@@ -1,0 +1,203 @@
+import { useRef, useState } from "react";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { CircleCheck, Lock } from "lucide-react";
+import PortalLayout from "../components/layout/PortalLayout";
+import TextField from "../components/ui/TextField";
+import PasswordField from "../components/ui/PasswordField";
+import Button from "../components/ui/Button";
+import Alert from "../components/ui/Alert";
+import { useAuth } from "../context/AuthContext";
+import { CITIZEN_HOME_PATH } from "../config/auth.config";
+import { validateIdentifier, validatePassword } from "../utils/validators";
+
+const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Citizen Login" }];
+const BENEFITS = [
+  "Submit grievances online.",
+  "Track grievance status.",
+  "Receive department updates.",
+  "Access your grievance history.",
+];
+
+const EMPTY_FORM = { identifier: "", password: "" };
+const NO_ERRORS = { identifier: "", password: "" };
+
+// Turns whatever went wrong into one clear sentence for the citizen.
+function describeLoginError(error) {
+  if (error.code === "NOT_CITIZEN") {
+    return "This account is not a citizen account. Please use the sign-in page provided for your role.";
+  }
+  if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
+  if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
+  if (error.status === 401) return "Invalid email or password. Check your details and try again.";
+  if (error.status === 400) return error.message;
+  return "The service is temporarily unavailable. Please try again in a few minutes.";
+}
+
+export default function CitizenLogin() {
+  const { status, login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [remember, setRemember] = useState(false);
+  const [errors, setErrors] = useState(NO_ERRORS);
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const identifierRef = useRef(null);
+  const passwordRef = useRef(null);
+
+  // Already signed in? Go straight to the citizen area.
+  if (status === "authenticated") return <Navigate to={CITIZEN_HOME_PATH} replace />;
+
+  const validators = { identifier: validateIdentifier, password: validatePassword };
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+    if (formError) setFormError("");
+    // Errors are only created on submit (checking on blur moves the layout while
+    // someone is clicking a link). Once an error shows, re-check it as they fix it.
+    if (errors[name]) setErrors((current) => ({ ...current, [name]: validators[name](value) }));
+  }
+
+  function handleReset() {
+    setForm(EMPTY_FORM);
+    setRemember(false);
+    setErrors(NO_ERRORS);
+    setFormError("");
+    identifierRef.current?.focus();
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (submitting) return;
+
+    setFormError("");
+
+    const nextErrors = {
+      identifier: validateIdentifier(form.identifier),
+      password: validatePassword(form.password),
+    };
+    setErrors(nextErrors);
+    if (nextErrors.identifier) return identifierRef.current?.focus();
+    if (nextErrors.password) return passwordRef.current?.focus();
+
+    setSubmitting(true);
+    try {
+      await login({ email: form.identifier.trim(), password: form.password, remember });
+      // Send the person back to the page they originally wanted, if any.
+      navigate(location.state?.from?.pathname || CITIZEN_HOME_PATH, { replace: true });
+    } catch (error) {
+      setFormError(describeLoginError(error));
+      setForm((current) => ({ ...current, password: "" })); // never keep a wrong password
+      setSubmitting(false);
+      passwordRef.current?.focus();
+    }
+  }
+
+  return (
+    <PortalLayout title="Citizen Login" breadcrumb={BREADCRUMB}>
+      <div className="login-grid">
+        <section className="card" aria-labelledby="login-heading">
+          <h1 className="card__title" id="login-heading">
+            Citizen Login
+          </h1>
+          <p className="card__subtitle">Sign in to submit grievances and track their progress.</p>
+
+          <form className="login-form" onSubmit={handleSubmit} noValidate>
+            {formError && <Alert title="Sign in failed">{formError}</Alert>}
+
+            <fieldset className="panel">
+              <legend className="panel__title">Sign-in details</legend>
+
+              <TextField
+                id="identifier"
+                name="identifier"
+                ref={identifierRef}
+                label="Email Address or Registered Mobile Number"
+                required
+                type="text"
+                inputMode="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="example@mail.com"
+                value={form.identifier}
+                onChange={handleChange}
+                readOnly={submitting}
+                error={errors.identifier}
+              />
+
+              <PasswordField
+                id="password"
+                name="password"
+                ref={passwordRef}
+                label="Password"
+                required
+                autoComplete="current-password"
+                placeholder="Enter password"
+                value={form.password}
+                onChange={handleChange}
+                readOnly={submitting}
+                error={errors.password}
+              />
+
+              <div className="login-form__options">
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(event) => setRemember(event.target.checked)}
+                  />
+                  <span>Remember me on this device</span>
+                </label>
+                <Link className="link" to="/forgot-password">
+                  Forgot Password?
+                </Link>
+              </div>
+            </fieldset>
+
+            <div className="login-form__actions">
+              <Button type="submit" loading={submitting} loadingText="Signing in…">
+                Sign In
+              </Button>
+              <Button type="button" variant="secondary" disabled={submitting} onClick={handleReset}>
+                Reset
+              </Button>
+            </div>
+
+            <p className="login-form__register">
+              New to the portal? <Link to="/register">Register as a citizen</Link>
+            </p>
+          </form>
+        </section>
+
+        <aside className="login-aside" aria-label="About signing in">
+          <section className="card card--soft">
+            <h2 className="card__heading">After you sign in</h2>
+            <ul className="check-list">
+              {BENEFITS.map((benefit) => (
+                <li key={benefit}>
+                  <CircleCheck size={20} aria-hidden="true" />
+                  <span>{benefit}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="notice">
+            <Lock className="notice__icon" size={22} aria-hidden="true" />
+            <div>
+              <p>
+                <strong>Your information is protected.</strong> Please do not share your login credentials with
+                anyone.
+              </p>
+              <p>Use “Remember me” only on your own device, and sign out when you finish on a shared computer.</p>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </PortalLayout>
+  );
+}
