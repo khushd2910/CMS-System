@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import CitizenLogin from "./pages/CitizenLogin";
+import CitizenRegister from "./pages/CitizenRegister";
 import CitizenDashboard from "./pages/CitizenDashboard";
 import ComingSoon from "./pages/ComingSoon";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -25,7 +26,7 @@ export default function App() {
       />
 
       {/* Later modules: kept as placeholders so every link works. */}
-      <Route path="/register" element={<ComingSoon title="Citizen Registration" />} />
+      <Route path="/register" element={<CitizenRegister />} />
       <Route path="/forgot-password" element={<ComingSoon title="Forgot Password" />} />
       <Route path="/reset-password/:token" element={<ComingSoon title="Reset Password" />} />
       <Route path="/about" element={<ComingSoon title="About Us" />} />

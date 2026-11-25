@@ -17,6 +17,25 @@ const userSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+        // Optional citizen profile fields (added for the registration page).
+        dateOfBirth: Date,
+        gender: {
+            type: String,
+            enum: ["male", "female", "other", "prefer_not_to_say"],
+        },
+        preferredLanguage: {
+            type: String,
+            enum: ["en", "hi", "gu"],
+        },
+        address: {
+            state: { type: String, trim: true },
+            district: { type: String, trim: true },
+            cityOrTaluka: { type: String, trim: true },
+            villageOrWard: { type: String, trim: true },
+            line: { type: String, trim: true },
+            landmark: { type: String, trim: true },
+            pinCode: { type: String, trim: true },
+        },
         email: {
             type: String,
             required: true,

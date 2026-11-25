@@ -39,3 +39,66 @@ export function validatePassword(raw) {
   // and older accounts may follow different password rules than new ones.
   return raw ? "" : "Enter your password.";
 }
+
+/* ---------- Registration ---------- */
+
+export function validateFullName(raw) {
+  const value = raw.trim();
+  if (!value) return "Enter your full name.";
+  if (value.length < 2) return "Full name must be at least 2 characters.";
+  return "";
+}
+
+export function validateDob(value) {
+  if (!value) return ""; // optional
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date > new Date()) return "Enter a valid date of birth.";
+  if (date.getFullYear() < 1900) return "Enter a valid date of birth.";
+  return "";
+}
+
+export function validateMobile(raw) {
+  if (!raw.trim()) return "Enter your mobile number.";
+  return MOBILE_PATTERN.test(normalizeMobile(raw)) ? "" : "Enter a valid 10-digit mobile number.";
+}
+
+export function validateEmail(raw) {
+  const value = raw.trim();
+  if (!value) return "Enter your email address.";
+  return EMAIL_PATTERN.test(value) ? "" : "Enter a valid email address, for example name@example.com.";
+}
+
+// Deliberately simple: at least 8 characters with a letter and a number.
+export function validateNewPassword(value) {
+  if (!value) return "Create a password.";
+  if (value.length < 8) return "Password must be at least 8 characters.";
+  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) return "Password must include at least one letter and one number.";
+  return "";
+}
+
+export function validateConfirmPassword(password, confirm) {
+  if (!confirm) return "Re-enter your password.";
+  return password === confirm ? "" : "Passwords do not match.";
+}
+
+export function validateRequired(label) {
+  return (value) => (value.trim() ? "" : `${label}.`);
+}
+
+export function validatePin(raw) {
+  const value = raw.trim();
+  if (!value) return "Enter your PIN code.";
+  return /^[1-9]\d{5}$/.test(value) ? "" : "PIN code must be 6 digits.";
+}
+
+/** 0 (empty) .. 4 (strong), plus a label for the strength bar. */
+export function passwordStrength(value) {
+  if (!value) return { score: 0, label: "" };
+  let score = 0;
+  if (value.length >= 8) score += 1;
+  if (value.length >= 12) score += 1;
+  if (/[A-Za-z]/.test(value) && /\d/.test(value)) score += 1;
+  if (/[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))) score += 1;
+  const labels = ["Weak", "Weak", "Fair", "Good", "Strong"];
+  return { score: Math.max(score, 1), label: labels[score] };
+}

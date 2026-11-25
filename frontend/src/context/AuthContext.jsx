@@ -51,6 +51,16 @@ export function AuthProvider({ children }) {
     return loggedInUser;
   }, []);
 
+  // The backend signs a new citizen in as part of registration, so we keep that
+  // behaviour: save the token for this browser session and mark the person as signed in.
+  const register = useCallback(async (payload) => {
+    const { user: newUser, token } = await authService.register(payload);
+    tokenStorage.set(token, false);
+    setUser(newUser);
+    setStatus("authenticated");
+    return newUser;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authService.logout(); // the server just acknowledges; the token is stateless
@@ -62,7 +72,7 @@ export function AuthProvider({ children }) {
     setStatus("anonymous");
   }, []);
 
-  const value = useMemo(() => ({ user, status, login, logout }), [user, status, login, logout]);
+  const value = useMemo(() => ({ user, status, login, register, logout }), [user, status, login, register, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -11,3 +11,8 @@ export const CITIZEN_PORTAL_ROLES = ["citizen"];
 
 // Where a citizen goes after a successful login.
 export const CITIZEN_HOME_PATH = "/citizen/dashboard";
+
+// Mobile OTP verification during registration.
+// The backend has no OTP endpoints or SMS provider yet, so this stays false and the
+// registration page does not show an OTP step. See README for what is required.
+export const SUPPORTS_MOBILE_OTP = false;

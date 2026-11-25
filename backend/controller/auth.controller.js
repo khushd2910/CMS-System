@@ -19,6 +19,19 @@ const createToken = (user) =>
         expiresIn: process.env.JWT_EXPIRES_IN || "1d",
     });
 
+const GENDERS = ["male", "female", "other", "prefer_not_to_say"];
+const LANGUAGES = ["en", "hi", "gu"];
+const clean = (value) => (typeof value === "string" ? value.trim() : "");
+
+// Normalises "+91 98765-43210" / "098765 43210" to 10 digits.
+const normalizeMobile = (value) => {
+    let digits = clean(value).replace(/[\s\-().]/g, "");
+    if (digits.startsWith("+91")) digits = digits.slice(3);
+    else if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+    else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+    return digits;
+};
+
 const authResponse = (user) => ({
     user: publicUser(user),
     token: createToken(user),
@@ -28,9 +41,12 @@ const authResponse = (user) => ({
 
 const register = async (req, res, next) => {
     try {
-        const { name, mobileNo, email, password } = req.body || {};
-        const normalizedName = typeof name === "string" ? name.trim() : "";
-        const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+        const {
+            name, mobileNo, email, password,
+            dateOfBirth, gender, preferredLanguage, address,
+        } = req.body || {};
+        const normalizedName = clean(name);
+        const normalizedEmail = clean(email).toLowerCase();
         if (!normalizedName || !normalizedEmail || typeof password !== "string") {
             return res.status(400).json({ message: "name, email, and password are required." });
         }
@@ -41,12 +57,54 @@ const register = async (req, res, next) => {
             return res.status(400).json({ message: "Password must be at least 8 characters." });
         }
 
+        // Optional profile fields: only validated when they are sent, so older clients still work.
+        const profile = {};
+        if (mobileNo !== undefined && clean(mobileNo)) {
+            const mobile = normalizeMobile(mobileNo);
+            if (!/^[6-9]\d{9}$/.test(mobile)) {
+                return res.status(400).json({ message: "A valid 10-digit Indian mobile number is required." });
+            }
+            profile.mobileNo = mobile;
+        }
+        if (clean(dateOfBirth)) {
+            const dob = new Date(dateOfBirth);
+            if (Number.isNaN(dob.getTime()) || dob > new Date()) {
+                return res.status(400).json({ message: "Date of birth is not valid." });
+            }
+            profile.dateOfBirth = dob;
+        }
+        if (clean(gender)) {
+            if (!GENDERS.includes(gender)) return res.status(400).json({ message: "Gender is not valid." });
+            profile.gender = gender;
+        }
+        if (clean(preferredLanguage)) {
+            if (!LANGUAGES.includes(preferredLanguage)) {
+                return res.status(400).json({ message: "Preferred language is not valid." });
+            }
+            profile.preferredLanguage = preferredLanguage;
+        }
+        if (address && typeof address === "object") {
+            const pinCode = clean(address.pinCode);
+            if (pinCode && !/^[1-9]\d{5}$/.test(pinCode)) {
+                return res.status(400).json({ message: "PIN code must be 6 digits." });
+            }
+            profile.address = {
+                state: clean(address.state),
+                district: clean(address.district),
+                cityOrTaluka: clean(address.cityOrTaluka),
+                villageOrWard: clean(address.villageOrWard),
+                line: clean(address.line),
+                landmark: clean(address.landmark),
+                pinCode,
+            };
+        }
+
         const user = await User.create({
             name: normalizedName,
-            mobileNo,
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
             role: "citizen",
+            ...profile,
         });
         return res.status(201).json(authResponse(user));
     } catch (error) {
