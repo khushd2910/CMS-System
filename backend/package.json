@@ -18,10 +18,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "seed": "node scripts/seed.js",
-<<<<<<< HEAD
-=======
     "test": "node tests/workflow.test.js",
->>>>>>> main
     "test-email": "node scripts/test-email.js"
   },
   "dependencies": {

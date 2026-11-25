@@ -1,10 +1,7 @@
 const multer = require("multer");
 const cloudinary = require("../config/cloudinary");
 const { Attachment, Grievance } = require("../models");
-<<<<<<< HEAD
-=======
 const { canAccessGrievance } = require("../utils/grievance-rules");
->>>>>>> main
 const { getPagination, paginationMeta } = require("../utils/pagination");
 
 const upload = multer({
@@ -19,16 +16,6 @@ const upload = multer({
     },
 });
 
-<<<<<<< HEAD
-const canManage = (grievance, user) =>
-    user.role === "admin" ||
-    String(grievance.citizenId) === String(user._id) ||
-    (user.role === "officer" &&
-        (String(grievance.assignedOfficerId || "") === String(user._id) ||
-            String(grievance.departmentId || "") === String(user.departmentId)));
-
-=======
->>>>>>> main
 const uploadToCloudinary = (file) =>
     new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
@@ -42,11 +29,7 @@ const listAttachments = async (req, res, next) => {
     try {
         const grievance = await Grievance.findById(req.params.id);
         if (!grievance) return res.status(404).json({ message: "Grievance not found." });
-<<<<<<< HEAD
-        if (!canManage(grievance, req.user)) {
-=======
         if (!canAccessGrievance(grievance, req.user)) {
->>>>>>> main
             return res.status(403).json({ message: "You are not authorized to view these attachments." });
         }
         const pagination = getPagination(req.query);
@@ -68,11 +51,7 @@ const uploadAttachment = async (req, res, next) => {
         if (!req.file) return res.status(400).json({ message: "An attachment file is required." });
         const grievance = await Grievance.findById(req.params.id);
         if (!grievance) return res.status(404).json({ message: "Grievance not found." });
-<<<<<<< HEAD
-        if (!canManage(grievance, req.user)) {
-=======
         if (!canAccessGrievance(grievance, req.user)) {
->>>>>>> main
             return res.status(403).json({ message: "You are not authorized to upload attachments." });
         }
 
@@ -96,14 +75,10 @@ const deleteAttachment = async (req, res, next) => {
         const attachment = await Attachment.findById(req.params.id);
         if (!attachment) return res.status(404).json({ message: "Attachment not found." });
         const grievance = await Grievance.findById(attachment.grievanceId);
-<<<<<<< HEAD
-        if (!grievance || (!canManage(grievance, req.user) && String(attachment.uploadedBy) !== String(req.user._id))) {
-=======
         // Admin may delete any attachment; everyone else only their own upload,
         // and only while they can still access the grievance.
         const isUploader = String(attachment.uploadedBy) === String(req.user._id);
         if (!grievance || !canAccessGrievance(grievance, req.user) || (req.user.role !== "admin" && !isUploader)) {
->>>>>>> main
             return res.status(403).json({ message: "You are not authorized to delete this attachment." });
         }
 

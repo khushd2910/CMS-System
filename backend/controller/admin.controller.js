@@ -17,11 +17,7 @@ const listUsers = async (req, res, next) => {
     try {
         const filter = {};
         if (req.query.role) {
-<<<<<<< HEAD
-            if (!["citizen", "officer", "admin"].includes(req.query.role)) {
-=======
             if (!["citizen", "manager", "admin"].includes(req.query.role)) {
->>>>>>> main
                 return res.status(400).json({ message: "Invalid user role." });
             }
             filter.role = req.query.role;
@@ -61,19 +57,11 @@ const createUser = async (req, res, next) => {
         if (password.length < 8) {
             return res.status(400).json({ message: "Password must be at least 8 characters." });
         }
-<<<<<<< HEAD
-        if (!["admin", "officer"].includes(role)) {
-            return res.status(400).json({ message: "Admin-created users must have the admin or officer role." });
-        }
-        if (role === "officer" && (!departmentId || !(await Department.exists({ _id: departmentId, isActive: true })))) {
-            return res.status(400).json({ message: "An active department is required for an officer." });
-=======
         if (!["admin", "manager"].includes(role)) {
             return res.status(400).json({ message: "Admin-created users must have the admin or manager role." });
         }
         if (role === "manager" && (!departmentId || !(await Department.exists({ _id: departmentId, isActive: true })))) {
             return res.status(400).json({ message: "An active department is required for a manager." });
->>>>>>> main
         }
 
         const user = await User.create({
@@ -82,11 +70,7 @@ const createUser = async (req, res, next) => {
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
             role,
-<<<<<<< HEAD
-            departmentId: role === "officer" ? departmentId : undefined,
-=======
             departmentId: role === "manager" ? departmentId : undefined,
->>>>>>> main
         });
         return res.status(201).json({ user: publicUser(user) });
     } catch (error) {
@@ -102,11 +86,7 @@ const updateUser = async (req, res, next) => {
         }
         const updates = req.body || {};
         if (updates.role !== undefined) {
-<<<<<<< HEAD
-            if (!["citizen", "officer", "admin"].includes(updates.role)) {
-=======
             if (!["citizen", "manager", "admin"].includes(updates.role)) {
->>>>>>> main
                 return res.status(400).json({ message: "Invalid user role." });
             }
             user.role = updates.role;
@@ -119,17 +99,10 @@ const updateUser = async (req, res, next) => {
             }
             user.departmentId = updates.departmentId || undefined;
         }
-<<<<<<< HEAD
-        if (user.role === "officer" && !user.departmentId) {
-            return res.status(400).json({ message: "An officer must be assigned to an active department." });
-        }
-        if (user.role !== "officer") user.departmentId = undefined;
-=======
         if (user.role === "manager" && !user.departmentId) {
             return res.status(400).json({ message: "A manager must be assigned to an active department." });
         }
         if (user.role !== "manager") user.departmentId = undefined;
->>>>>>> main
         await user.save();
         return res.json({ user: publicUser(user) });
     } catch (error) {
