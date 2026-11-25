@@ -15,6 +15,10 @@ export const authService = {
   adminLogin: ({ email, password, captchaId, captchaAnswer }) =>
     request("/auth/admin-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),
 
+  // -> same shape as login. Department managers only; needs a valid CAPTCHA answer.
+  managerLogin: ({ email, password, captchaId, captchaAnswer }) =>
+    request("/auth/manager-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),
+
   // -> { user }   (needs the Bearer token)
   me: (options) => request("/auth/me", { auth: true, ...options }),
 

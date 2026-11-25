@@ -193,3 +193,13 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Variants used by the Department Manager page (wireframe: left-aligned heading, centred security text). */
+.admin-card__title--left {
+  text-align: left;
+}
+
+.admin-security--center p {
+  max-width: none;
+  text-align: center;
+}

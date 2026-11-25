@@ -211,16 +211,20 @@ const getCaptcha = (req, res) => {
     return res.json(createCaptcha());
 };
 
-const adminLogin = async (req, res, next) => {
+// One login handler for every staff role (admin, manager). Each role gets its own endpoint, its own
+// lock-out counter and its own generic error text, and an account of any other role is rejected
+// with exactly the same answer as a wrong password.
+const createStaffLogin = (role, invalidMessage) => async (req, res, next) => {
     try {
         const { email, password, captchaId, captchaAnswer } = req.body || {};
         const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
         if (!normalizedEmail || typeof password !== "string" || !password) {
             return res.status(400).json({ message: "Email and password are required.", code: "MISSING_FIELDS" });
         }
+        const throttleKey = `${role}:${normalizedEmail}`;
 
-        if (isLocked(req.ip, normalizedEmail)) {
-            console.warn(`[admin-login] locked out ip=${req.ip}`);
+        if (isLocked(req.ip, throttleKey)) {
+            console.warn(`[${role}-login] locked out ip=${req.ip}`);
             return res.status(429).json({
                 message: "Too many failed attempts. Try again later.",
                 code: "TOO_MANY_ATTEMPTS",
@@ -229,29 +233,32 @@ const adminLogin = async (req, res, next) => {
 
         // CAPTCHA is checked first and is used up whether or not it was right.
         if (!verifyCaptcha(captchaId, captchaAnswer)) {
-            recordFailure(req.ip, normalizedEmail);
+            recordFailure(req.ip, throttleKey);
             return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
         }
 
         const user = await User.findOne({ email: normalizedEmail }).select("+password");
         const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
 
-        // Same answer for "no such account", "wrong password" and "not an admin":
-        // the page must not reveal which admin accounts exist or what role an account has.
-        if (!user || !passwordOk || user.role !== "admin") {
-            recordFailure(req.ip, normalizedEmail);
-            console.warn(`[admin-login] failed ip=${req.ip}`);
-            return res.status(401).json({ message: "Invalid Admin ID or Password.", code: "INVALID_CREDENTIALS" });
+        // Same answer for "no such account", "wrong password" and "wrong role":
+        // the page must not reveal which accounts exist or what role an account has.
+        if (!user || !passwordOk || user.role !== role) {
+            recordFailure(req.ip, throttleKey);
+            console.warn(`[${role}-login] failed ip=${req.ip}`);
+            return res.status(401).json({ message: invalidMessage, code: "INVALID_CREDENTIALS" });
         }
 
-        clearFailures(req.ip, normalizedEmail);
-        console.info(`[admin-login] success userId=${user._id} ip=${req.ip}`);
+        clearFailures(req.ip, throttleKey);
+        console.info(`[${role}-login] success userId=${user._id} ip=${req.ip}`);
         return res.json(authResponse(user));
     } catch (error) {
         return next(error);
     }
 };
 
+const adminLogin = createStaffLogin("admin", "Invalid Admin ID or Password.");
+const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password.");
+
 module.exports = {
-    register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin,
+    register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
 };

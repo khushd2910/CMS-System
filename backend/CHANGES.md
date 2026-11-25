@@ -80,3 +80,8 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - Attempts are written to the server console only. A real audit trail (a collection with who/when/IP/result) has NOT been built.
 - `POST /api/auth/login` is unchanged, so an admin can still sign in there without a CAPTCHA (see the note in the reply).
 - Unit checks: `npm run test:unit`.
+
+## Department Manager login
+- `POST /api/auth/manager-login` (same body and CAPTCHA as admin-login) accepts `role: "manager"` accounts only. Wrong account, wrong password and wrong role all return the same 401 `Invalid Manager ID or Password.`
+- Admin and manager share one handler (`createStaffLogin`) but have separate endpoints and separate lock-out counters (key = role + email).
+- A manager can sign in even if no department is assigned yet; the existing access rules then show them no grievances (`canAccessGrievance`). `POST /api/auth/login` is unchanged and still lets a manager in without a CAPTCHA.

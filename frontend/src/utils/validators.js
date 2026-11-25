@@ -1,4 +1,4 @@
-import { SUPPORTS_ADMIN_ID_LOGIN, SUPPORTS_MOBILE_LOGIN } from "../config/auth.config";
+import { SUPPORTS_ADMIN_ID_LOGIN, SUPPORTS_MANAGER_ID_LOGIN, SUPPORTS_MOBILE_LOGIN } from "../config/auth.config";
 
 // Same rule the backend uses for email (backend/controller/auth.controller.js).
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -117,4 +117,13 @@ export function validateAdminIdentifier(raw) {
 
 export function validateCaptchaAnswer(raw) {
   return raw.trim() ? "" : "Enter the characters shown in the CAPTCHA.";
+}
+
+export function validateManagerIdentifier(raw) {
+  const value = raw.trim();
+  if (!value) return "Enter your registered email or Manager ID.";
+  if (!value.includes("@")) {
+    return SUPPORTS_MANAGER_ID_LOGIN ? "" : "Enter your registered email address.";
+  }
+  return EMAIL_PATTERN.test(value) ? "" : "Enter a valid email address.";
 }

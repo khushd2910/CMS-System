@@ -1,6 +1,6 @@
 # National Grievance Redressal Portal – Frontend
 
-React (Vite) frontend for the CMS project. Current modules: **Citizen Login**, **Citizen Registration** and **Admin Login**.
+React (Vite) frontend for the CMS project. Current modules: **Citizen Login**, **Citizen Registration**, **Admin Login** and **Department Manager Login**.
 
 ## Run it
 
@@ -52,3 +52,11 @@ src/
 - Admins sign in with their **email**. The User model has no separate Admin ID field (`SUPPORTS_ADMIN_ID_LOGIN` in `config/auth.config.js`).
 - "Forgot Password?" links to `/forgot-password`, which is still a placeholder page. An admin-specific recovery
   page has not been built (the backend `forgot-password` / `reset-password` endpoints exist and work for any account with an email).
+
+## Department Manager Login notes
+
+- Routes: `/manager/login` and `/manager/dashboard` (temporary placeholder, `roles={["manager"]}`).
+- `components/auth/StaffLoginPage.jsx` is the shared page behind both staff logins; `pages/AdminLogin.jsx` and
+  `pages/ManagerLogin.jsx` are thin wrappers that pass wording, role and endpoint.
+- Calls `POST /api/auth/manager-login` (CAPTCHA from `GET /api/auth/captcha`). Managers sign in with their email
+  (`SUPPORTS_MANAGER_ID_LOGIN` in `config/auth.config.js` is false: there is no Manager ID field yet).

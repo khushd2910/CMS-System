@@ -3,11 +3,13 @@ import CitizenLogin from "./pages/CitizenLogin";
 import CitizenRegister from "./pages/CitizenRegister";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
+import ManagerLogin from "./pages/ManagerLogin";
+import ManagerDashboard from "./pages/ManagerDashboard";
 import CitizenDashboard from "./pages/CitizenDashboard";
 import ComingSoon from "./pages/ComingSoon";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
-import { ADMIN_LOGIN_PATH, ADMIN_PORTAL_ROLES } from "./config/auth.config";
+import { ADMIN_LOGIN_PATH, ADMIN_PORTAL_ROLES, MANAGER_LOGIN_PATH, MANAGER_PORTAL_ROLES } from "./config/auth.config";
 
 export default function App() {
   const { status } = useAuth();
@@ -34,6 +36,16 @@ export default function App() {
         element={
           <ProtectedRoute roles={ADMIN_PORTAL_ROLES} loginPath={ADMIN_LOGIN_PATH}>
             <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="/manager/login" element={<ManagerLogin />} />
+      <Route
+        path="/manager/dashboard"
+        element={
+          <ProtectedRoute roles={MANAGER_PORTAL_ROLES} loginPath={MANAGER_LOGIN_PATH}>
+            <ManagerDashboard />
           </ProtectedRoute>
         }
       />

@@ -24,3 +24,9 @@ export const SUPPORTS_ADMIN_ID_LOGIN = false;
 export const ADMIN_PORTAL_ROLES = ["admin"];
 export const ADMIN_HOME_PATH = "/admin/dashboard";
 export const ADMIN_LOGIN_PATH = "/admin/login";
+
+// Department Manager sign-in page. Like admins, managers sign in with their email (no separate Manager ID field yet).
+export const SUPPORTS_MANAGER_ID_LOGIN = false;
+export const MANAGER_PORTAL_ROLES = ["manager"];
+export const MANAGER_HOME_PATH = "/manager/dashboard";
+export const MANAGER_LOGIN_PATH = "/manager/login";
