@@ -16,3 +16,11 @@ export const CITIZEN_HOME_PATH = "/citizen/dashboard";
 // The backend has no OTP endpoints or SMS provider yet, so this stays false and the
 // registration page does not show an OTP step. See README for what is required.
 export const SUPPORTS_MOBILE_OTP = false;
+
+// Admin sign-in page.
+// The User model has no separate "Admin ID" field, so admins sign in with their email address.
+// Set to true once the backend can look an admin up by an ID.
+export const SUPPORTS_ADMIN_ID_LOGIN = false;
+export const ADMIN_PORTAL_ROLES = ["admin"];
+export const ADMIN_HOME_PATH = "/admin/dashboard";
+export const ADMIN_LOGIN_PATH = "/admin/login";

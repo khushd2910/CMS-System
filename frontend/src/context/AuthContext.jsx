@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { authService } from "../services/authService";
 import { tokenStorage } from "../services/tokenStorage";
-import { CITIZEN_PORTAL_ROLES } from "../config/auth.config";
+import { ADMIN_PORTAL_ROLES, CITIZEN_PORTAL_ROLES } from "../config/auth.config";
 
 const AuthContext = createContext(null);
 
@@ -51,6 +51,22 @@ export function AuthProvider({ children }) {
     return loggedInUser;
   }, []);
 
+  // Admin sign-in. The backend already refuses non-admin accounts; the role is checked again here
+  // so a staff or citizen token is never saved by this page. The token goes in sessionStorage only
+  // (cleared when the tab closes): there is no "remember me" for administrators.
+  const adminLogin = useCallback(async (credentials) => {
+    const { user: adminUser, token } = await authService.adminLogin(credentials);
+    if (!ADMIN_PORTAL_ROLES.includes(adminUser.role)) {
+      const error = new Error("Not an administrator.");
+      error.status = 401;
+      throw error;
+    }
+    tokenStorage.set(token, false);
+    setUser(adminUser);
+    setStatus("authenticated");
+    return adminUser;
+  }, []);
+
   // The backend signs a new citizen in as part of registration, so we keep that
   // behaviour: save the token for this browser session and mark the person as signed in.
   const register = useCallback(async (payload) => {
@@ -72,7 +88,7 @@ export function AuthProvider({ children }) {
     setStatus("anonymous");
   }, []);
 
-  const value = useMemo(() => ({ user, status, login, register, logout }), [user, status, login, register, logout]);
+  const value = useMemo(() => ({ user, status, login, adminLogin, register, logout }), [user, status, login, adminLogin, register, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

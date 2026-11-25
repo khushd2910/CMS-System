@@ -19,6 +19,7 @@
     "dev": "nodemon index.js",
     "seed": "node scripts/seed.js",
     "test": "node tests/workflow.test.js",
+    "test:unit": "node tests/admin-login-utils.test.js",
     "test-email": "node scripts/test-email.js"
   },
   "dependencies": {

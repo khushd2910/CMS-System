@@ -1,6 +1,6 @@
 # National Grievance Redressal Portal – Frontend
 
-React (Vite) frontend for the CMS project. Current modules: **Citizen Login** and **Citizen Registration**.
+React (Vite) frontend for the CMS project. Current modules: **Citizen Login**, **Citizen Registration** and **Admin Login**.
 
 ## Run it
 
@@ -43,3 +43,12 @@ src/
   `config/auth.config.js` is `false`. To add it you need an SMS/OTP provider (e.g. MSG91, Twilio, or an
   NIC/government gateway), endpoints to send and verify an OTP (hashed, short expiry, attempt limit, rate limit),
   and a `mobileVerified` flag on the user.
+
+## Admin Login notes
+
+- Routes: `/admin/login` (page) and `/admin/dashboard` (temporary placeholder, `ProtectedRoute roles={["admin"]}`).
+- Calls `GET /api/auth/captcha` and `POST /api/auth/admin-login`. The admin token is kept in `sessionStorage` only
+  (no "remember me"); credentials are never stored.
+- Admins sign in with their **email**. The User model has no separate Admin ID field (`SUPPORTS_ADMIN_ID_LOGIN` in `config/auth.config.js`).
+- "Forgot Password?" links to `/forgot-password`, which is still a placeholder page. An admin-specific recovery
+  page has not been built (the backend `forgot-password` / `reset-password` endpoints exist and work for any account with an email).

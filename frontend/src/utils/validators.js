@@ -1,4 +1,4 @@
-import { SUPPORTS_MOBILE_LOGIN } from "../config/auth.config";
+import { SUPPORTS_ADMIN_ID_LOGIN, SUPPORTS_MOBILE_LOGIN } from "../config/auth.config";
 
 // Same rule the backend uses for email (backend/controller/auth.controller.js).
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -101,4 +101,20 @@ export function passwordStrength(value) {
   if (/[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))) score += 1;
   const labels = ["Weak", "Weak", "Fair", "Good", "Strong"];
   return { score: Math.max(score, 1), label: labels[score] };
+}
+
+/* ---------- Admin login ---------- */
+
+// The backend identifies admins by email only (there is no separate Admin ID field yet).
+export function validateAdminIdentifier(raw) {
+  const value = raw.trim();
+  if (!value) return "Enter your Admin Email / ID.";
+  if (!value.includes("@")) {
+    return SUPPORTS_ADMIN_ID_LOGIN ? "" : "Enter your registered admin email address.";
+  }
+  return EMAIL_PATTERN.test(value) ? "" : "Enter a valid email address.";
+}
+
+export function validateCaptchaAnswer(raw) {
+  return raw.trim() ? "" : "Enter the characters shown in the CAPTCHA.";
 }

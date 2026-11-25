@@ -70,3 +70,13 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - Priority names are still low/medium/high/urgent (wireframe says "Critical").
 - No "Submitted" history entry is written when a grievance is created yet.
 - Wireframe registration/login/forgot-password differences (extra fields, mobile login, CAPTCHA, OTP) are untouched.
+
+
+## Admin login (CAPTCHA + admin-only endpoint)
+- `GET /api/auth/captcha` -> `{ id, image, expiresInSeconds }` (self-hosted SVG CAPTCHA, `utils/captcha.js`; one use, 5 min expiry, answer kept only as a hash).
+- `POST /api/auth/admin-login` body `{ email, password, captchaId, captchaAnswer }`. Order: lock-out check, CAPTCHA, credentials.
+  Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; 5 failures per IP+email -> 429 for 15 minutes (`utils/login-throttle.js`).
+- Both helpers keep state in memory (single server process). Use Redis or similar if you run several instances; set `app.set("trust proxy", ...)` if the API is behind a proxy so `req.ip` is the client.
+- Attempts are written to the server console only. A real audit trail (a collection with who/when/IP/result) has NOT been built.
+- `POST /api/auth/login` is unchanged, so an admin can still sign in there without a CAPTCHA (see the note in the reply).
+- Unit checks: `npm run test:unit`.

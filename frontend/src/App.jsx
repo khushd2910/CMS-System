@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import CitizenLogin from "./pages/CitizenLogin";
 import CitizenRegister from "./pages/CitizenRegister";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
 import CitizenDashboard from "./pages/CitizenDashboard";
 import ComingSoon from "./pages/ComingSoon";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
+import { ADMIN_LOGIN_PATH, ADMIN_PORTAL_ROLES } from "./config/auth.config";
 
 export default function App() {
   const { status } = useAuth();
@@ -21,6 +24,16 @@ export default function App() {
         element={
           <ProtectedRoute>
             <CitizenDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route
+        path="/admin/dashboard"
+        element={
+          <ProtectedRoute roles={ADMIN_PORTAL_ROLES} loginPath={ADMIN_LOGIN_PATH}>
+            <AdminDashboard />
           </ProtectedRoute>
         }
       />

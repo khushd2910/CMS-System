@@ -10,6 +10,7 @@ import "./styles/layout.css";
 import "./styles/form.css";
 import "./styles/login.css";
 import "./styles/register.css";
+import "./styles/admin.css";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 

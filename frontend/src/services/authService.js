@@ -8,6 +8,13 @@ export const authService = {
   // -> same shape as login (the backend signs the new citizen in). Status 409 = email already registered.
   register: (payload) => request("/auth/register", { method: "POST", body: payload }),
 
+  // -> { id, image (SVG data URI), expiresInSeconds }. Each CAPTCHA works once.
+  captcha: (options) => request("/auth/captcha", options),
+
+  // -> same shape as login. Admin accounts only; needs a valid CAPTCHA answer.
+  adminLogin: ({ email, password, captchaId, captchaAnswer }) =>
+    request("/auth/admin-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),
+
   // -> { user }   (needs the Bearer token)
   me: (options) => request("/auth/me", { auth: true, ...options }),
 

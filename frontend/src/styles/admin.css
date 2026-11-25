@@ -1,0 +1,195 @@
+/* Admin Login page. Reuses .card, .field__input, .btn and .login-grid. */
+.admin-grid {
+  grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.admin-card {
+  padding: 28px 40px 36px;
+}
+
+.admin-card__title {
+  text-align: center;
+  font-size: 2rem;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.admin-form {
+  margin-top: 22px;
+}
+
+.admin-form > .alert {
+  margin-bottom: 8px;
+}
+
+.admin-field {
+  margin-top: 14px;
+}
+
+/* Input with an icon on the left (envelope / padlock). */
+.icon-wrap {
+  position: relative;
+}
+
+.icon-wrap__icon {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--navy);
+  pointer-events: none;
+}
+
+.field__input--with-icon {
+  padding-left: 52px;
+}
+
+.admin-form__show {
+  margin-top: 12px;
+}
+
+/* CAPTCHA: image | refresh | answer */
+.captcha {
+  margin-top: 16px;
+}
+
+.captcha__row {
+  display: grid;
+  grid-template-columns: 150px 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.captcha__image {
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 56px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #f4f6fa;
+  overflow: hidden;
+}
+
+.captcha__image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.captcha__placeholder {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.captcha__refresh {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.captcha__refresh:hover {
+  background: rgba(18, 58, 102, 0.08);
+}
+
+.captcha__refresh:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.captcha__spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.admin-form__forgot {
+  margin-top: 16px;
+}
+
+.admin-form__forgot-link {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.admin-form__submit {
+  width: 100%;
+  margin-top: 20px;
+  font-size: 1.1rem;
+}
+
+/* Right-hand security panel */
+.admin-security {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 28px;
+  border: 2px solid var(--navy);
+  border-radius: var(--radius-lg);
+  background: var(--info);
+  color: #14283d;
+  text-align: center;
+}
+
+.admin-security__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--navy);
+}
+
+.admin-security__lock {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.admin-security__heading {
+  margin-top: 14px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.admin-security p {
+  margin-top: 16px;
+  max-width: 28ch;
+  text-align: left;
+  font-size: 1.05rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-card {
+    padding-inline: 24px;
+  }
+}
+
+/* Small phones: the CAPTCHA wraps so nothing scrolls sideways. */
+@media (max-width: 520px) {
+  .admin-card {
+    padding-inline: 16px;
+  }
+  .admin-card__title {
+    font-size: 1.6rem;
+  }
+  .captcha__row {
+    grid-template-columns: minmax(0, 150px) 44px;
+    justify-content: space-between;
+  }
+  .captcha__answer {
+    grid-column: 1 / -1;
+  }
+}

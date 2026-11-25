@@ -3,7 +3,7 @@ import { forwardRef } from "react";
 // A labelled text input with an error message that screen readers announce
 // together with the field (aria-describedby).
 const TextField = forwardRef(function TextField(
-  { id, label, required = false, error = "", hint = "", children, className = "", ...inputProps },
+  { id, label, required = false, hideLabel = false, error = "", hint = "", children, className = "", ...inputProps },
   ref
 ) {
   const hintId = hint ? `${id}-hint` : undefined;
@@ -12,7 +12,7 @@ const TextField = forwardRef(function TextField(
 
   return (
     <div className={`field ${error ? "field--invalid" : ""} ${className}`.trim()}>
-      <label className="field__label" htmlFor={id}>
+      <label className={`field__label ${hideLabel ? "visually-hidden" : ""}`.trim()} htmlFor={id}>
         {label}
         {required && (
           <span className="field__required" aria-hidden="true">

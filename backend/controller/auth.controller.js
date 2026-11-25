@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const { User } = require("../models");
 const { getSecret } = require("../middleware/auth");
 const { sendPasswordResetEmail } = require("../utils/email");
+const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
+const { isLocked, recordFailure, clearFailures } = require("../utils/login-throttle");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -198,4 +200,58 @@ const resetPassword = async (req, res, next) => {
     }
 };
 
-module.exports = { register, login, getMe, logout, forgotPassword, resetPassword };
+// ---------- Admin login (CAPTCHA + admin-only) ----------
+
+// A real bcrypt hash compared against when the account does not exist, so a missing account
+// takes as long to reject as a wrong password (no account-enumeration through timing).
+const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
+
+const getCaptcha = (req, res) => {
+    res.set("Cache-Control", "no-store");
+    return res.json(createCaptcha());
+};
+
+const adminLogin = async (req, res, next) => {
+    try {
+        const { email, password, captchaId, captchaAnswer } = req.body || {};
+        const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+        if (!normalizedEmail || typeof password !== "string" || !password) {
+            return res.status(400).json({ message: "Email and password are required.", code: "MISSING_FIELDS" });
+        }
+
+        if (isLocked(req.ip, normalizedEmail)) {
+            console.warn(`[admin-login] locked out ip=${req.ip}`);
+            return res.status(429).json({
+                message: "Too many failed attempts. Try again later.",
+                code: "TOO_MANY_ATTEMPTS",
+            });
+        }
+
+        // CAPTCHA is checked first and is used up whether or not it was right.
+        if (!verifyCaptcha(captchaId, captchaAnswer)) {
+            recordFailure(req.ip, normalizedEmail);
+            return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
+        }
+
+        const user = await User.findOne({ email: normalizedEmail }).select("+password");
+        const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+
+        // Same answer for "no such account", "wrong password" and "not an admin":
+        // the page must not reveal which admin accounts exist or what role an account has.
+        if (!user || !passwordOk || user.role !== "admin") {
+            recordFailure(req.ip, normalizedEmail);
+            console.warn(`[admin-login] failed ip=${req.ip}`);
+            return res.status(401).json({ message: "Invalid Admin ID or Password.", code: "INVALID_CREDENTIALS" });
+        }
+
+        clearFailures(req.ip, normalizedEmail);
+        console.info(`[admin-login] success userId=${user._id} ip=${req.ip}`);
+        return res.json(authResponse(user));
+    } catch (error) {
+        return next(error);
+    }
+};
+
+module.exports = {
+    register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin,
+};
