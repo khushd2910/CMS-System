@@ -14,12 +14,20 @@ const NO_ERRORS = { identifier: "", password: "", captchaAnswer: "" };
 
 // One generic sentence per failure. Backend wording is never shown, and the page never says
 // whether an account exists or what role it has.
+// "about 14 minutes", "less than a minute" ... from the number of seconds the server sent.
+function waitText(seconds) {
+  if (!seconds || seconds <= 0) return "a few minutes";
+  if (seconds < 60) return "less than a minute";
+  const minutes = Math.ceil(seconds / 60);
+  return `about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 function describeLoginError(error, invalidMessage) {
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
   if (error.status === 400 && error.serverCode === "CAPTCHA_INVALID") return "CAPTCHA verification failed.";
   if (error.status === 401) return invalidMessage;
-  if (error.status === 429) return "Too many failed attempts. Please wait a few minutes before trying again.";
+  if (error.status === 429) return `Too many failed attempts. Please try again in ${waitText(error.retryAfterSeconds)}.`;
   return "Unable to authenticate. Please try again.";
 }
 

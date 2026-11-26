@@ -75,11 +75,10 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 ## Admin login (CAPTCHA + admin-only endpoint)
 - `GET /api/auth/captcha` -> `{ id, image, expiresInSeconds }` (self-hosted SVG CAPTCHA, `utils/captcha.js`; one use, 5 min expiry, answer kept only as a hash).
 - `POST /api/auth/admin-login` body `{ email, password, captchaId, captchaAnswer }`. Order: lock-out check, CAPTCHA, credentials.
-  Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; 5 failures per IP+email -> 429 for 15 minutes (`utils/login-throttle.js`).
-- Both helpers keep state in memory (single server process). Use Redis or similar if you run several instances; set `app.set("trust proxy", ...)` if the API is behind a proxy so `req.ip` is the client.
-- Attempts are written to the server console only. A real audit trail (a collection with who/when/IP/result) has NOT been built.
+  Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; too many failures -> 429 (rules below).
+- The CAPTCHA store still lives in memory (one server process). The lock-out and the audit trail now live in the database: see "Staff login: lock-out and audit trail" below.
 - `POST /api/auth/login` is unchanged, so an admin can still sign in there without a CAPTCHA (see the note in the reply).
-- Unit checks: `npm run test:unit`.
+- Unit checks: `npm run test:unit`. End-to-end checks: `npm run test:staff`.
 
 ## Department Manager login
 - `POST /api/auth/manager-login` (same body and CAPTCHA as admin-login) accepts `role: "manager"` accounts only. Wrong account, wrong password and wrong role all return the same 401 `Invalid Manager ID or Password.`
@@ -98,3 +97,33 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - Without SMTP: outside production the link is printed to the server console; in production registration is refused (503) so no unverifiable accounts are created.
 - MOBILE verification is NOT implemented (needs an SMS/OTP provider).
 - Tests: `npm run test:citizen` (needs a test database, wipes it).
+
+
+## Staff login: lock-out and audit trail
+**Lock-out** (`utils/login-throttle.js`). Counted from the audit trail in the database, so a restart does not reset it and several servers agree. A lock lifts by itself 15 minutes after the oldest counted failure. The 429 answer carries a `Retry-After` header and `retryAfterSeconds` in the body.
+
+| Rule | Counts | Limit / 15 min |
+|------|--------|----------------|
+| same IP + same account | wrong password, unknown account, wrong role. Reset by a successful sign-in from that IP on that account | 5 |
+| any IP + same account | the same failures | 20 |
+| same IP + any account | the same failures | 30 |
+| same IP | wrong CAPTCHA | 20 |
+
+- A wrong CAPTCHA never counts against an ACCOUNT, so nobody can lock an admin out by sending bad CAPTCHAs.
+- Trade-off of the "any IP + same account" rule: while someone is guessing from many IPs the real owner is also asked to wait. Raise `LIMITS.account` if that is a problem.
+- Admin and manager counters are separate. Locked attempts are logged once per minute per IP+account, so hammering a locked account cannot fill the database.
+
+**Behind a proxy / load balancer** set `TRUST_PROXY=1` (the NUMBER of proxies in front of Node). Without it every visitor looks like the proxy's IP and the IP rules above lock everybody together. `TRUST_PROXY=true` is refused on purpose (visitors could fake their IP). In production the server prints a warning when it is not set (`config/trust-proxy.js`).
+
+**Audit trail** (`models/audit-log.model.js`, `utils/audit.js`, collection `auditlogs`). One document per event: who (user id, or the e-mail typed on a failed login), role, event, outcome (`success` / `failure` / `blocked`), reason, client IP and browser, the record affected, time. Never stored: passwords, tokens, CAPTCHA answers, request bodies. A failure to write a log entry is printed to the console and never blocks the action.
+- Logged: admin and manager login attempts (success, wrong credentials, wrong CAPTCHA, blocked), staff logout, password reset by e-mailed link (any role), grievance assignment / status / priority changes, user create / update (field names only), department create / update, attachment upload / delete by staff.
+- NOT logged: citizen sign-ins and citizen actions (their login has no lock-out yet, so logging each try would let anyone fill the database), reading or searching records, forgot-password requests.
+- There is no retention rule: the collection only grows. Decide how long to keep it (an archive job, or a TTL index) before going live.
+- Read it: `GET /api/admin/audit-logs?event=&outcome=&role=&userId=&identifier=&from=&to=&page=&limit=` (admin only, newest first). `identifier` is a partial match, `to=2026-11-30` includes the whole day. This is the data for the wireframe's "Activity Logs" table.
+
+## Other changes in this round
+- The CAPTCHA now loads once per page (it was requested twice in development), and the old CAPTCHA is removed from the screen the moment it is used up, so it cannot be submitted again.
+- The header badge follows the area of the site: "Admin Portal" under `/admin/...`, "Manager Portal" under `/manager/...`, "Citizen Portal" everywhere else.
+- The admin/manager login screens show "try again in about N minutes" using the real remaining time.
+- `resend-verification` kept its own small in-memory limit (5 per IP + e-mail per 15 minutes).
+- Tests: `npm run test:all` runs every suite. `test:staff` is new (20 checks); `test:unit` now covers the CAPTCHA and the TRUST_PROXY parser.

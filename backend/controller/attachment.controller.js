@@ -3,6 +3,7 @@ const cloudinary = require("../config/cloudinary");
 const { Attachment, Grievance } = require("../models");
 const { canAccessGrievance } = require("../utils/grievance-rules");
 const { getPagination, paginationMeta } = require("../utils/pagination");
+const { recordAudit } = require("../utils/audit");
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -64,6 +65,14 @@ const uploadAttachment = async (req, res, next) => {
             publicId: result.public_id,
             fileType: req.file.mimetype,
         });
+        if (req.user.role !== "citizen") {
+            await recordAudit(req, {
+                event: "attachment_uploaded",
+                targetType: "Grievance",
+                targetId: grievance._id,
+                details: `${grievance.referenceNumber}: ${req.file.originalname}`,
+            });
+        }
         return res.status(201).json({ attachment });
     } catch (error) {
         return next(error);
@@ -84,6 +93,14 @@ const deleteAttachment = async (req, res, next) => {
 
         await cloudinary.uploader.destroy(attachment.publicId, { resource_type: "image" });
         await attachment.deleteOne();
+        if (req.user.role !== "citizen") {
+            await recordAudit(req, {
+                event: "attachment_deleted",
+                targetType: "Grievance",
+                targetId: grievance._id,
+                details: `${grievance.referenceNumber}: ${attachment.fileName}`,
+            });
+        }
         return res.json({ message: "Attachment deleted successfully." });
     } catch (error) {
         return next(error);

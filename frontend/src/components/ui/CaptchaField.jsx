@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { authService } from "../../services/authService";
+
+// One request at a time. In development React runs every effect twice on purpose (StrictMode); both
+// runs share this single request, so the page asks the server for ONE CAPTCHA, not two.
+let pendingRequest = null;
+function requestCaptcha() {
+  if (!pendingRequest) {
+    pendingRequest = authService.captcha().finally(() => {
+      pendingRequest = null;
+    });
+  }
+  return pendingRequest;
+}
 
 // Loads a CAPTCHA from the backend (GET /api/auth/captcha) and lets the page refresh it.
 // Returns { captcha: {id, image} | null, loading, loadError, refresh }.
@@ -8,18 +20,22 @@ export function useCaptcha() {
   const [captcha, setCaptcha] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const latestRequest = useRef(0);
 
   const refresh = useCallback(async () => {
+    const thisRequest = (latestRequest.current += 1);
     setLoading(true);
     setLoadError(false);
+    // A CAPTCHA works only once, so the old one is dropped at once: it can never be submitted again
+    // while the new one is on its way.
+    setCaptcha(null);
     try {
-      const data = await authService.captcha();
-      setCaptcha({ id: data.id, image: data.image });
+      const data = await requestCaptcha();
+      if (thisRequest === latestRequest.current) setCaptcha({ id: data.id, image: data.image });
     } catch {
-      setCaptcha(null);
-      setLoadError(true);
+      if (thisRequest === latestRequest.current) setLoadError(true);
     } finally {
-      setLoading(false);
+      if (thisRequest === latestRequest.current) setLoading(false);
     }
   }, []);
 

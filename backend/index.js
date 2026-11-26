@@ -11,8 +11,12 @@ const adminRoutes = require("./routes/admin.routes");
 const attachmentRoutes = require("./routes/attachment.routes");
 const notificationRoutes = require("./routes/notification.routes");
 const errorHandler = require("./middleware/error-handler");
+const { parseTrustProxy } = require("./config/trust-proxy");
 
 const app=express();
+// Needed behind a reverse proxy so req.ip is the visitor, not the proxy (see config/trust-proxy.js).
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
 app.use(cors());
 app.use(express.json());
 
@@ -30,6 +34,9 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
+    if (process.env.NODE_ENV === "production" && trustProxy === undefined) {
+        console.warn("[security] TRUST_PROXY is not set. If this server runs behind a proxy or load balancer, set TRUST_PROXY=1 (number of proxies) so IP-based lock-outs and the audit trail see the real visitor.");
+    }
     await connectDB();
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);

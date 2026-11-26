@@ -1,5 +1,6 @@
 const { Grievance, StatusHistory, Department, User, Notification } = require("../models");
 const { sendGrievanceStatusEmail } = require("../utils/email");
+const { recordAudit } = require("../utils/audit");
 const { getPagination, paginationMeta } = require("../utils/pagination");
 const {
     STATUSES,
@@ -236,6 +237,12 @@ const updateGrievanceStatus = async (req, res, next) => {
             remarks: remarks || undefined,
             action: "status_changed",
         });
+        await recordAudit(req, {
+            event: "grievance_status_changed",
+            targetType: "Grievance",
+            targetId: grievance._id,
+            details: `${grievance.referenceNumber}: ${oldStatus} -> ${status}`,
+        });
         await notifyCitizen(grievance, {
             oldStatus,
             newStatus: status,
@@ -315,6 +322,12 @@ const assignDepartment = async (req, res, next) => {
             action: "department_assigned",
             details,
         });
+        await recordAudit(req, {
+            event: "grievance_assigned",
+            targetType: "Grievance",
+            targetId: grievance._id,
+            details: `${grievance.referenceNumber}: ${details}`,
+        });
 
         await notifyCitizen(grievance, {
             oldStatus,
@@ -378,6 +391,12 @@ const updateGrievancePriority = async (req, res, next) => {
             remarks: remarks || undefined,
             action: "priority_changed",
             details: `Priority changed from ${oldPriority} to ${priority}`,
+        });
+        await recordAudit(req, {
+            event: "grievance_priority_changed",
+            targetType: "Grievance",
+            targetId: grievance._id,
+            details: `${grievance.referenceNumber}: priority ${oldPriority} -> ${priority}`,
         });
         return res.json({ grievance });
     } catch (error) {

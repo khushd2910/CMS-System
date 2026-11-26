@@ -1,11 +1,12 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { User } = require("../models");
+const { User, AuditLog } = require("../models");
 const { getSecret } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/email");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
-const { isLocked, recordFailure, clearFailures } = require("../utils/login-throttle");
+const { getLockStatus } = require("../utils/login-throttle");
+const { recordAudit, normalizeIdentifier, clientIp } = require("../utils/audit");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -241,6 +242,23 @@ const verifyEmail = async (req, res, next) => {
     }
 };
 
+// At most 5 resend requests per IP + account every 15 minutes (kept in memory: it only protects the
+// mailbox from being flooded, it does not guard a password).
+const RESEND_WINDOW_MS = 15 * 60 * 1000;
+const RESEND_MAX = 5;
+const resendRequests = new Map(); // key -> { count, first }
+const resendAllowed = (key) => {
+    const now = Date.now();
+    const entry = resendRequests.get(key);
+    if (!entry || now - entry.first > RESEND_WINDOW_MS) {
+        resendRequests.set(key, { count: 1, first: now });
+        if (resendRequests.size > 10000) resendRequests.delete(resendRequests.keys().next().value);
+        return true;
+    }
+    entry.count += 1;
+    return entry.count <= RESEND_MAX;
+};
+
 const resendVerification = async (req, res, next) => {
     const generic = {
         message: "If this account is waiting for email verification, a new verification email has been sent.",
@@ -249,9 +267,7 @@ const resendVerification = async (req, res, next) => {
         const raw = req.body?.identifier;
         const identifier = typeof raw === "string" ? raw.trim() : "";
         const query = identifier ? identifierQuery(identifier) : null;
-        const throttleKey = `resend:${identifier.toLowerCase()}`;
-        if (!query || isLocked(req.ip, throttleKey)) return res.json(generic);
-        recordFailure(req.ip, throttleKey); // every request counts: at most 5 per 15 minutes
+        if (!query || !resendAllowed(`${clientIp(req)}|${identifier.toLowerCase()}`)) return res.json(generic);
 
         const user = await User.findOne(query).select("+emailVerificationTokenHash +emailVerificationExpires");
         if (user && user.role === "citizen" && user.emailVerified === false && requireEmailVerification()) {
@@ -269,8 +285,10 @@ const resendVerification = async (req, res, next) => {
 
 const getMe = (req, res) => res.json({ user: publicUser(req.user) });
 
-const logout = (req, res) =>
-    res.json({ message: "Logged out successfully. Remove the token from the client." });
+const logout = async (req, res) => {
+    if (req.user && req.user.role !== "citizen") await recordAudit(req, { event: "staff_logout" });
+    return res.json({ message: "Logged out successfully. Remove the token from the client." });
+};
 
 const forgotPassword = async (req, res, next) => {
     try {
@@ -329,6 +347,7 @@ const resetPassword = async (req, res, next) => {
         user.passwordResetTokenHash = undefined;
         user.passwordResetExpires = undefined;
         await user.save();
+        await recordAudit(req, { event: "password_reset", user, details: "Password changed with an emailed reset link." });
         return res.json({ message: "Password has been reset successfully." });
     } catch (error) {
         return next(error);
@@ -342,45 +361,61 @@ const getCaptcha = (req, res) => {
     return res.json(createCaptcha());
 };
 
+// Writes ONE "blocked" row per IP + account per minute, so someone hammering a locked account
+// cannot fill the database with log entries.
+const recordBlocked = async (req, role, identifier, scope) => {
+    const recent = await AuditLog.exists({
+        event: "staff_login", outcome: "blocked", role, identifier, ip: clientIp(req),
+        createdAt: { $gt: new Date(Date.now() - 60 * 1000) },
+    });
+    if (!recent) {
+        await recordAudit(req, { event: "staff_login", outcome: "blocked", reason: `locked_${scope}`, role, identifier });
+    }
+};
+
 // One login handler for every staff role (admin, manager). Each role gets its own endpoint, its own
-// lock-out counter and its own generic error text, and an account of any other role is rejected
+// lock-out counters and its own generic error text, and an account of any other role is rejected
 // with exactly the same answer as a wrong password.
+//
+// Order of checks: lock-out -> CAPTCHA -> credentials. Every attempt is written to the audit trail
+// (utils/audit.js); the lock-out rules (utils/login-throttle.js) are calculated from those entries.
 const createStaffLogin = (role, invalidMessage) => async (req, res, next) => {
     try {
         const { email, password, captchaId, captchaAnswer } = req.body || {};
-        const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
-        if (!normalizedEmail || typeof password !== "string" || !password) {
+        const identifier = normalizeIdentifier(email);
+        if (!identifier || typeof password !== "string" || !password) {
             return res.status(400).json({ message: "Email and password are required.", code: "MISSING_FIELDS" });
         }
-        const throttleKey = `${role}:${normalizedEmail}`;
 
-        if (isLocked(req.ip, throttleKey)) {
-            console.warn(`[${role}-login] locked out ip=${req.ip}`);
+        const lock = await getLockStatus({ ip: clientIp(req), role, identifier });
+        if (lock.locked) {
+            await recordBlocked(req, role, identifier, lock.scope);
+            res.set("Retry-After", String(lock.retryAfterSeconds));
             return res.status(429).json({
                 message: "Too many failed attempts. Try again later.",
                 code: "TOO_MANY_ATTEMPTS",
+                retryAfterSeconds: lock.retryAfterSeconds,
             });
         }
 
-        // CAPTCHA is checked first and is used up whether or not it was right.
+        // The CAPTCHA is checked first and is used up whether or not it was right.
+        // A wrong CAPTCHA is logged but never counts against the ACCOUNT.
         if (!verifyCaptcha(captchaId, captchaAnswer)) {
-            recordFailure(req.ip, throttleKey);
+            await recordAudit(req, { event: "staff_login", outcome: "failure", reason: "captcha_failed", role, identifier });
             return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
         }
 
-        const user = await User.findOne({ email: normalizedEmail }).select("+password");
+        const user = await User.findOne({ email: identifier }).select("+password");
         const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
 
         // Same answer for "no such account", "wrong password" and "wrong role":
         // the page must not reveal which accounts exist or what role an account has.
         if (!user || !passwordOk || user.role !== role) {
-            recordFailure(req.ip, throttleKey);
-            console.warn(`[${role}-login] failed ip=${req.ip}`);
+            await recordAudit(req, { event: "staff_login", outcome: "failure", reason: "invalid_credentials", role, identifier });
             return res.status(401).json({ message: invalidMessage, code: "INVALID_CREDENTIALS" });
         }
 
-        clearFailures(req.ip, throttleKey);
-        console.info(`[${role}-login] success userId=${user._id} ip=${req.ip}`);
+        await recordAudit(req, { event: "staff_login", outcome: "success", role, identifier, user });
         return res.json(authResponse(user));
     } catch (error) {
         return next(error);

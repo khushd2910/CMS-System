@@ -5,4 +5,5 @@ module.exports = {
     StatusHistory: require("./status-history.model"),
     Attachment: require("./attachment.model"),
     Notification: require("./notification.model"),
+    AuditLog: require("./audit-log.model"),
 };

@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
-const { User, Department } = require("../models");
+const { User, Department, AuditLog } = require("../models");
 const { getPagination, paginationMeta } = require("../utils/pagination");
+const { EVENTS, OUTCOMES, recordAudit } = require("../utils/audit");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -73,6 +74,12 @@ const createUser = async (req, res, next) => {
             role,
             departmentId: role === "manager" ? departmentId : undefined,
         });
+        await recordAudit(req, {
+            event: "user_created",
+            targetType: "User",
+            targetId: user._id,
+            details: `Created ${role} account ${user.email}`,
+        });
         return res.status(201).json({ user: publicUser(user) });
     } catch (error) {
         return next(error);
@@ -107,10 +114,61 @@ const updateUser = async (req, res, next) => {
         }
         if (user.role !== "manager") user.departmentId = undefined;
         await user.save();
+        // Field NAMES only: values (and passwords) never go into the log.
+        const changed = ["role", "name", "mobileNo", "departmentId"].filter((field) => updates[field] !== undefined);
+        await recordAudit(req, {
+            event: "user_updated",
+            targetType: "User",
+            targetId: user._id,
+            details: `Updated ${user.email}: ${changed.join(", ") || "no fields"}`,
+        });
         return res.json({ user: publicUser(user) });
     } catch (error) {
         return next(error);
     }
 };
 
-module.exports = { listUsers, createUser, updateUser };
+// GET /api/admin/audit-logs?event=&outcome=&role=&userId=&identifier=&from=&to=&page=&limit=
+// Newest first. "from" / "to" are dates (for example 2026-11-01); "identifier" is a partial match.
+const listAuditLogs = async (req, res, next) => {
+    try {
+        const filter = {};
+        if (req.query.event) {
+            if (!EVENTS.includes(req.query.event)) return res.status(400).json({ message: "Invalid audit event." });
+            filter.event = req.query.event;
+        }
+        if (req.query.outcome) {
+            if (!OUTCOMES.includes(req.query.outcome)) return res.status(400).json({ message: "Invalid audit outcome." });
+            filter.outcome = req.query.outcome;
+        }
+        if (typeof req.query.role === "string" && req.query.role) filter.role = req.query.role;
+        if (typeof req.query.userId === "string" && req.query.userId) filter.userId = req.query.userId;
+        if (typeof req.query.identifier === "string" && req.query.identifier) {
+            const escaped = req.query.identifier.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            filter.identifier = { $regex: escaped };
+        }
+        const range = {};
+        for (const [key, operator] of [["from", "$gte"], ["to", "$lte"]]) {
+            if (typeof req.query[key] !== "string" || !req.query[key]) continue;
+            const date = new Date(req.query[key]);
+            if (Number.isNaN(date.getTime())) return res.status(400).json({ message: `"${key}" is not a valid date.` });
+            // A bare date for "to" means the whole day.
+            if (key === "to" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.to)) date.setUTCHours(23, 59, 59, 999);
+            range[operator] = date;
+        }
+        if (Object.keys(range).length) filter.createdAt = range;
+
+        const pagination = getPagination(req.query);
+        const total = await AuditLog.countDocuments(filter);
+        const logs = await AuditLog.find(filter)
+            .populate("userId", "name email role")
+            .sort({ createdAt: -1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        return res.json({ logs, pagination: paginationMeta(pagination, total) });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+module.exports = { listUsers, createUser, updateUser, listAuditLogs };

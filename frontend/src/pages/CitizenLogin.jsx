@@ -156,11 +156,11 @@ export default function CitizenLogin() {
                 label="Email Address or Registered Mobile Number"
                 required
                 type="text"
-                inputMode="email"
+                inputMode="text"
                 autoComplete="username"
                 autoCapitalize="none"
                 spellCheck={false}
-                placeholder="example@mail.com"
+                placeholder="Enter email or mobile number"
                 value={form.identifier}
                 onChange={handleChange}
                 readOnly={submitting}
@@ -188,7 +188,7 @@ export default function CitizenLogin() {
                     checked={remember}
                     onChange={(event) => setRemember(event.target.checked)}
                   />
-                  <span>Remember me on this device</span>
+                  <span>Remember me</span>
                 </label>
                 <Link className="link" to="/forgot-password">
                   Forgot Password?

@@ -1,5 +1,6 @@
 const { Department } = require("../models");
 const { getPagination, paginationMeta } = require("../utils/pagination");
+const { recordAudit } = require("../utils/audit");
 
 const listDepartments = async (req, res, next) => {
     try {
@@ -25,6 +26,12 @@ const listDepartments = async (req, res, next) => {
 const createDepartment = async (req, res, next) => {
     try {
         const department = await Department.create(req.body);
+        await recordAudit(req, {
+            event: "department_created",
+            targetType: "Department",
+            targetId: department._id,
+            details: `Created department ${department.name}`,
+        });
         return res.status(201).json({ department });
     } catch (error) {
         return next(error);
@@ -41,6 +48,12 @@ const updateDepartment = async (req, res, next) => {
         if (!department) {
             return res.status(404).json({ message: "Department not found." });
         }
+        await recordAudit(req, {
+            event: "department_updated",
+            targetType: "Department",
+            targetId: department._id,
+            details: `Updated ${department.name}: ${Object.keys(req.body || {}).join(", ") || "no fields"}`,
+        });
         return res.json({ department });
     } catch (error) {
         return next(error);

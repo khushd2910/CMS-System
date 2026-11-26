@@ -1,8 +1,18 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { CircleUserRound } from "lucide-react";
 import PortalEmblem from "./PortalEmblem";
 
+// The badge on the right names the part of the portal you are in. Citizen pages are the default.
+const PORTALS = [
+  { prefix: "/admin", label: "Admin Portal" },
+  { prefix: "/manager", label: "Manager Portal" },
+];
+
 export default function PortalHeader() {
+  const { pathname } = useLocation();
+  const portalLabel =
+    PORTALS.find(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`))?.label ?? "Citizen Portal";
+
   return (
     <header className="portal-header">
       <div className="container portal-header__inner">
@@ -10,7 +20,7 @@ export default function PortalHeader() {
           <span className="portal-header__emblem">
             <PortalEmblem size={36} />
           </span>
-          <span className="portal-header__title">National Grievance Redressal Portal</span>
+          <span className="portal-header__title">Private Grievance Redressal Portal</span>
         </Link>
 
         <div className="portal-header__meta">
@@ -22,7 +32,7 @@ export default function PortalHeader() {
             <span className="portal-header__badge-icon">
               <CircleUserRound size={22} aria-hidden="true" />
             </span>
-            Citizen Portal
+            {portalLabel}
           </span>
         </div>
       </div>

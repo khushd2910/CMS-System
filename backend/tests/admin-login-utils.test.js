@@ -1,8 +1,8 @@
-// Plain-Node checks for the CAPTCHA and throttle helpers (no database needed): npm run test:unit
+// Plain-Node checks for the CAPTCHA helper and the TRUST_PROXY parser (no database needed): npm run test:unit
+// The lock-out rules need the database: see staff-login.test.js (npm run test:staff).
 const assert = require("assert");
 const crypto = require("crypto");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
-const throttle = require("../utils/login-throttle");
 
 // Read the real answer by brute-forcing the hash (the store never keeps plain text).
 const { _peekForTests } = require("../utils/captcha");
@@ -33,12 +33,16 @@ assert.strictEqual(verifyCaptcha(c3.id, right3), false, "a wrong attempt uses th
 assert.strictEqual(verifyCaptcha("nope", "1234"), false);
 assert.strictEqual(verifyCaptcha(undefined, undefined), false);
 
-for (let i = 0; i < throttle.MAX_FAILURES; i += 1) {
-    assert.strictEqual(throttle.isLocked("1.1.1.1", "a@b.in"), false);
-    throttle.recordFailure("1.1.1.1", "a@b.in");
-}
-assert.strictEqual(throttle.isLocked("1.1.1.1", "A@b.in"), true, "locks after max failures");
-assert.strictEqual(throttle.isLocked("2.2.2.2", "a@b.in"), false, "other IPs unaffected");
-throttle.clearFailures("1.1.1.1", "a@b.in");
-assert.strictEqual(throttle.isLocked("1.1.1.1", "a@b.in"), false);
+// TRUST_PROXY parsing (the lock-out and audit trail depend on the real visitor IP).
+const { parseTrustProxy } = require("../config/trust-proxy");
+const quiet = console.error; console.error = () => {};
+assert.strictEqual(parseTrustProxy(undefined), undefined, "unset -> do not trust proxies");
+assert.strictEqual(parseTrustProxy(""), undefined);
+assert.strictEqual(parseTrustProxy("false"), undefined);
+assert.strictEqual(parseTrustProxy("1"), 1, "a number = how many proxies");
+assert.strictEqual(parseTrustProxy(" 2 "), 2);
+assert.strictEqual(parseTrustProxy("true"), undefined, "true is refused: visitors could fake their IP");
+console.error = quiet;
+assert.strictEqual(parseTrustProxy("loopback, 10.0.0.0/8"), "loopback, 10.0.0.0/8", "subnets pass through");
+
 console.log("admin-login utils: all checks passed");

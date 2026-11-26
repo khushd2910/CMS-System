@@ -6,13 +6,14 @@ const TIMEOUT_MS = 15000;
 
 export class ApiError extends Error {
   // status 0 means the request never reached the server.
-  constructor({ status, message, code, details, serverCode }) {
+  constructor({ status, message, code, details, serverCode, retryAfterSeconds }) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code; // "NETWORK" | "TIMEOUT" | undefined
     this.details = details;
     this.serverCode = serverCode; // e.g. "CAPTCHA_INVALID", sent by the backend
+    this.retryAfterSeconds = retryAfterSeconds; // set on 429: how long until trying again is allowed
   }
 }
 
@@ -61,7 +62,10 @@ export async function request(path, { method = "GET", body, auth = false, signal
   }
 
   if (!response.ok) {
+    // On "too many attempts" (429) the server says how long to wait, in a header and in the body.
+    const headerSeconds = Number(response.headers.get("Retry-After"));
     throw new ApiError({
+      retryAfterSeconds: headerSeconds > 0 ? headerSeconds : data?.retryAfterSeconds,
       status: response.status,
       message: data?.message || `Request failed with status ${response.status}.`,
       details: data?.errors,
