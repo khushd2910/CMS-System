@@ -42,7 +42,7 @@ const call = async (method, path, { token, ip, body } = {}) => {
 };
 const staffLogin = (role, email, password, { ip, captcha = "GOOD" } = {}) =>
     call("POST", `/api/auth/${role}-login`, { ip, body: { email, password, captchaId: "x", captchaAnswer: captcha } });
-const GOOD = "Passw0rd1";
+const GOOD = "Passw0rd1!";
 const failMany = async (role, email, times, ip) => { for (let i = 0; i < times; i += 1) await staffLogin(role, email, "wrong", { ip }); };
 // Pretends every log entry is `minutes` older (plain updates, so it works on any MongoDB-compatible server).
 const ageAll = async (minutes) => {
@@ -225,7 +225,7 @@ const reset = async () => { await AuditLog.deleteMany({}); };
     });
     await check("user and department changes by the admin; logout", async () => {
         await reset();
-        const created = await call("POST", "/api/admin/users", { token: adminToken, body: { name: "New Mgr", email: "new@t.in", password: "Passw0rd1", role: "manager", departmentId: String(water._id) } });
+        const created = await call("POST", "/api/admin/users", { token: adminToken, body: { name: "New Mgr", email: "new@t.in", password: "Passw0rd1!", role: "manager", departmentId: String(water._id) } });
         assert.equal(created.status, 201);
         assert.equal((await call("PATCH", `/api/admin/users/${created.body.user.id}`, { token: adminToken, body: { name: "Renamed" } })).status, 200);
         assert.equal((await call("POST", "/api/departments", { token: adminToken, body: { name: "Roads" } })).status, 201);
@@ -233,7 +233,7 @@ const reset = async () => { await AuditLog.deleteMany({}); };
         const events = (await AuditLog.find({}).sort({ createdAt: 1 })).map((x) => x.event);
         assert.deepEqual(events, ["user_created", "user_updated", "department_created", "staff_logout"]);
         const text = JSON.stringify(await AuditLog.find({}).lean());
-        assert.ok(!text.includes("Passw0rd1"), "the new user's password is not logged");
+        assert.ok(!text.includes("Passw0rd1!"), "the new user's password is not logged");
     });
 
     console.log("GET /api/admin/audit-logs");

@@ -1,4 +1,4 @@
-# National Grievance Redressal Portal – Frontend
+# Grievance Redressal Portal – Frontend
 
 React (Vite) frontend for the CMS project. Current modules: **Citizen Login**, **Citizen Registration**, **Admin Login** and **Department Manager Login**.
 
@@ -31,14 +31,18 @@ src/
   components/layout/       PortalHeader, NavBar, Breadcrumb, PortalFooter, PortalLayout, PortalEmblem
   components/ProtectedRoute.jsx
   pages/                   CitizenLogin, CitizenRegister (done), CitizenDashboard + ComingSoon (temporary placeholders)
-  data/locations.js        SAMPLE State/District/City list for the registration dropdowns (replace with full data)
+  data/locations.js        State/District/Taluka choices; Gujarat includes all 34 districts and 265 talukas
   styles/                  tokens.css (colours/fonts), base, layout, form, login
 ```
 
 ## Citizen Registration notes
 
-- Route: `/register`. Posts to `POST /api/auth/register`; the backend signs the citizen in, so the page shows a
-  success message and then offers "Go to Dashboard" (same behaviour as before).
+- Route: `/register`. Posts to `POST /api/auth/register`; the backend signs the citizen in unless email
+  verification is enabled, in which case the page asks the citizen to verify before signing in.
+- Registration requires name, email, mobile, address, PIN code, and acceptance of the Terms and Conditions and
+  Privacy Policy. The backend stores the acceptance and its timestamp. Passwords require at least 8 characters,
+  a letter, a number, and a symbol. English is the only supported site language.
+- The location dropdown has all Gujarat districts and talukas; other states are still sample data.
 - Mobile OTP is **not implemented**: the backend has no OTP endpoints or SMS provider. `SUPPORTS_MOBILE_OTP` in
   `config/auth.config.js` is `false`. To add it you need an SMS/OTP provider (e.g. MSG91, Twilio, or an
   NIC/government gateway), endpoints to send and verify an OTP (hashed, short expiry, attempt limit, rate limit),
@@ -52,6 +56,11 @@ src/
 - Admins sign in with their **email**. The User model has no separate Admin ID field (`SUPPORTS_ADMIN_ID_LOGIN` in `config/auth.config.js`).
 - "Forgot Password?" links to `/forgot-password`, which is still a placeholder page. An admin-specific recovery
   page has not been built (the backend `forgot-password` / `reset-password` endpoints exist and work for any account with an email).
+
+## Citizen Login notes
+
+- Calls `GET /api/auth/captcha` and submits its one-use challenge with credentials to `POST /api/auth/login`.
+- CAPTCHA challenges expire after five minutes. A new challenge is fetched after each failed attempt.
 
 ## Department Manager Login notes
 

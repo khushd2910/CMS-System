@@ -1,13 +1,42 @@
-// SAMPLE location data so the State -> District -> City / Taluka dropdowns work.
-// Replace with the full official list (or an API) before going live.
-// Shape: { State: { District: ["City / Taluka", ...] } }
+// Government of India's Local Government Directory: Gujarat's 34 districts and 265 talukas.
+// Other states remain limited sample data.
+// The registration form uses this as { State: { District: ["City / Taluka", ...] } }.
 export const LOCATIONS = {
   Gujarat: {
-    Ahmedabad: ["Ahmedabad City", "Daskroi", "Sanand", "Dholka", "Viramgam"],
-    Gandhinagar: ["Gandhinagar", "Kalol", "Mansa", "Dehgam"],
-    Rajkot: ["Rajkot City", "Gondal", "Jetpur", "Morbi"],
-    Surat: ["Surat City", "Bardoli", "Kamrej", "Olpad"],
-    Vadodara: ["Vadodara City", "Padra", "Karjan", "Savli"],
+    Ahmedabad: ["Bavla", "Daskroi", "Detroj-Rampura", "Dhandhuka", "Dholera", "Dholka", "Mandal", "Sanand", "Viramgam"],
+    Amreli: ["Amreli", "Babra", "Bagasara", "Dhari", "Jafrabad", "Khambha", "Kunkavav Vadia", "Lathi", "Lilia", "Rajula", "Savar Kundla"],
+    Anand: ["Anand Rural", "Anklav", "Borsad", "Khambhat", "Petlad", "Sojitra", "Tarapur", "Umreth"],
+    Aravalli: ["Bayad", "Bhiloda", "Dhansura", "Malpur", "Meghraj", "Modasa", "Sathamba", "Shamlaji"],
+    Banaskantha: ["Amirgadh", "Danta", "Dantiwada", "Deesa", "Dhanera", "Hadad", "Kankrej", "Ogad", "Palanpur", "Vadgam"],
+    Bharuch: ["Amod", "Anklesvar", "Bharuch", "Hansot", "Jambusar", "Jhagadia", "Netrang", "Vagra", "Valia"],
+    Bhavnagar: ["Bhavnagar", "Gariadhar", "Ghogha", "Jesar", "Mahuva", "Palitana", "Sihor", "Talaja", "Umrala", "Vallabhipur"],
+    Botad: ["Barwala", "Botad", "Gadhada", "Ranpur"],
+    "Chhota Udepur": ["Bodeli", "Chhota Udaipur", "Jetpur Pavi", "Kadval", "Kavant", "Nasvadi", "Sankheda"],
+    Dahod: ["Devgadbaria", "Dhanpur", "Dohad", "Fatepura", "Garbada", "Govindguru Limdi", "Jhalod", "Limkheda", "Sanjeli", "Singvad", "Sukhsar"],
+    Dang: ["Ahwa", "Subir", "Waghai"],
+    "Devbhumi Dwarka": ["Bhanvad", "Kalyanpur", "Khambhalia", "Okhamandal"],
+    Gandhinagar: ["Dehgam", "Gandhinagar", "Kalol Gandhinagar", "Mansa"],
+    "Gir Somnath": ["Gir Gadhda", "Kodinar", "Patan-Veraval", "Sutrapada", "Talala", "Una"],
+    Jamnagar: ["Dhrol", "Jamjodhpur", "Jamnagar Rural", "Jodiya", "Kalavad", "Lalpur"],
+    Junagadh: ["Bhesan", "Junagadh", "Keshod", "Malia Hatina", "Manavadar", "Mangrol", "Mendarda", "Vanthali", "Visavadar"],
+    Kachchh: ["Abdasa", "Anjar", "Bhachau", "Bhuj", "Gandhidham", "Lakhpat", "Mandvi", "Mundra", "Nakhatrana", "Rapar"],
+    Kheda: ["Fagvel", "Galteshwar", "Kapadvanj", "Kathlal", "Kheda", "Mahudha", "Matar", "Mehmedabad", "Nadiad", "Thasra", "Vaso"],
+    Mahisagar: ["Balasinor", "Godhar", "Kadana", "Khanpur", "Kothmba", "Lunawada", "Santrampur", "Virpur"],
+    Mehsana: ["Becharaji", "Jotana", "Kadi", "Kheralu", "Mahesana", "Satlasana", "Unjha", "Vadnagar", "Vijapur", "Visnagar"],
+    Morbi: ["Halvad", "Maliya", "Morvi", "Tankara", "Wankaner"],
+    Narmada: ["Chikada", "Dediapada", "Garudeshwar", "Nandod", "Sagbara", "Tilakwada"],
+    Navsari: ["Bansda", "Chikhli", "Gandevi", "Jalalpore", "Khergam", "Navsari"],
+    Panchmahal: ["Ghoghamba", "Godhra", "Halol", "Jambughoda", "Kalol", "Morwa (Hadaf)", "Shehera"],
+    Patan: ["Chanasma", "Harij", "Patan", "Radhanpur", "Sami", "Santalpur", "Saraswati", "Shankheshvar", "Sidhpur"],
+    Porbandar: ["Kutiyana", "Porbandar", "Ranavav"],
+    Rajkot: ["Dhoraji", "Gondal", "Jamkandorna", "Jasdan", "Jetpur", "Kotda Sangani", "Lodhika", "Paddhari", "Rajkot", "Upleta", "Vinchchiya"],
+    Sabarkantha: ["Himatnagar", "Idar", "Khedbrahma", "Poshina", "Prantij", "Talod", "Vadali", "Vijaynagar"],
+    Surat: ["Ambika", "Areth", "Bardoli", "Chorasi", "Kamrej", "Mahuva", "Mandvi", "Mangrol", "Olpad", "Palsana", "Umarpada"],
+    Surendranagar: ["Chotila", "Chuda", "Dasada", "Dhrangadhra", "Lakhtar", "Limbdi", "Muli", "Sayla", "Thangadh", "Wadhwan"],
+    Tapi: ["Dolvan", "Kukarmunda", "Nizar", "Songadh", "Uchchhal", "Ukai", "Valod", "Vyara"],
+    Vadodara: ["Dabhoi", "Desar", "Karjan", "Padra", "Savli", "Sinor", "Vadodara Rural", "Vaghodia"],
+    Valsad: ["Dharampur", "Kaprada", "Nanapodha", "Pardi", "Umbergaon", "Valsad", "Vapi"],
+    "Vav-Tharad": ["Bhabhar", "Deodar", "Dharnidhar", "Lakhani", "Raah", "Suigam", "Tharad", "Vav"],
   },
   Maharashtra: {
     Mumbai: ["Mumbai City", "Andheri", "Borivali"],

@@ -68,11 +68,13 @@ export function validateEmail(raw) {
   return EMAIL_PATTERN.test(value) ? "" : "Enter a valid email address, for example name@example.com.";
 }
 
-// Deliberately simple: at least 8 characters with a letter and a number.
+// Registration password policy: at least 8 characters, a letter, a number, and a symbol.
 export function validateNewPassword(value) {
   if (!value) return "Create a password.";
   if (value.length < 8) return "Password must be at least 8 characters.";
-  if (!/[A-Za-z]/.test(value) || !/\d/.test(value)) return "Password must include at least one letter and one number.";
+  if (!/[A-Za-z]/.test(value)) return "Password must include at least one letter.";
+  if (!/\d/.test(value)) return "Password must include at least one number.";
+  if (!/[^A-Za-z0-9\s]/.test(value)) return "Password must include at least one symbol.";
   return "";
 }
 
@@ -94,13 +96,13 @@ export function validatePin(raw) {
 /** 0 (empty) .. 4 (strong), plus a label for the strength bar. */
 export function passwordStrength(value) {
   if (!value) return { score: 0, label: "" };
-  let score = 0;
-  if (value.length >= 8) score += 1;
-  if (value.length >= 12) score += 1;
-  if (/[A-Za-z]/.test(value) && /\d/.test(value)) score += 1;
-  if (/[^A-Za-z0-9]/.test(value) || (/[a-z]/.test(value) && /[A-Z]/.test(value))) score += 1;
+  const hasRequiredCharacters =
+    value.length >= 8 && /[A-Za-z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9\s]/.test(value);
+  let score = hasRequiredCharacters ? 2 : 1;
+  if (hasRequiredCharacters && value.length >= 12) score += 1;
+  if (hasRequiredCharacters && value.length >= 16 && /[a-z]/.test(value) && /[A-Z]/.test(value)) score += 1;
   const labels = ["Weak", "Weak", "Fair", "Good", "Strong"];
-  return { score: Math.max(score, 1), label: labels[score] };
+  return { score, label: labels[score] };
 }
 
 /* ---------- Admin login ---------- */

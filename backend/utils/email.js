@@ -1,6 +1,13 @@
 const nodemailer = require("nodemailer");
 
 let transporter;
+const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+}[character]));
 
 const getTransporter = () => {
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -35,6 +42,12 @@ const sendEmail = async ({ to, subject, text, html }) => {
         text,
         html,
     });
+    const recipientAccepted = mail.accepted?.some(
+        (accepted) => String(accepted).toLowerCase() === to.toLowerCase()
+    );
+    if (!recipientAccepted) {
+        throw Object.assign(new Error("SMTP server did not accept the recipient."), { code: "EMAIL_REJECTED" });
+    }
 
     return {
         messageId: mail.messageId,
@@ -85,21 +98,24 @@ const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
     return sendEmail({ to: email, subject, text, html });
 };
 
-const sendVerificationEmail = async ({ email, name, verifyUrl }) => {
-    const subject = "Verify your email for the Grievance System";
+const sendVerificationEmail = async ({ email, name, code }) => {
+    const subject = "Your email verification code";
     const text = [
         `Hello ${name || "Citizen"},`,
         "",
-        "Thank you for registering. Please confirm your email address within 24 hours using this link:",
-        verifyUrl,
+        "Thank you for registering. Enter this code in the Grievance Redressal Portal to verify your email address:",
+        code,
+        "",
+        "This code expires in 10 minutes and can only be used once.",
         "",
         "If you did not create this account, you can ignore this email.",
     ].join("\n");
     const html = `
-        <p>Hello ${name || "Citizen"},</p>
-        <p>Thank you for registering. Please confirm your email address:</p>
-        <p><a href="${verifyUrl}">Verify my email</a></p>
-        <p>This link expires in 24 hours. If you did not create this account, ignore this email.</p>
+        <p>Hello ${escapeHtml(name || "Citizen")},</p>
+        <p>Thank you for registering. Enter this code in the Grievance Redressal Portal to verify your email address:</p>
+        <p style="font-size:24px;font-weight:bold;letter-spacing:5px">${escapeHtml(code)}</p>
+        <p>This code expires in 10 minutes and can only be used once.</p>
+        <p>If you did not create this account, you can ignore this email.</p>
     `;
 
     return sendEmail({ to: email, subject, text, html });

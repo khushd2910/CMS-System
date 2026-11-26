@@ -22,6 +22,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<CitizenLogin />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/citizen/dashboard"

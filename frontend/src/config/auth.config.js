@@ -1,7 +1,8 @@
 // Small switches that describe what the backend currently supports.
 // Change them here instead of hunting through components.
 
-// POST /api/auth/login accepts { identifier, password }, where identifier is an email or a 10-digit mobile number.
+// POST /api/auth/login accepts { identifier, password, captchaId, captchaAnswer }.
+// identifier is an email or a 10-digit mobile number.
 export const SUPPORTS_MOBILE_LOGIN = true;
 
 // Roles allowed to sign in on the Citizen Login page.

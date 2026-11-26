@@ -3,6 +3,7 @@
 const assert = require("assert");
 const crypto = require("crypto");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
+const { passwordPolicyError } = require("../utils/password");
 
 // Read the real answer by brute-forcing the hash (the store never keeps plain text).
 const { _peekForTests } = require("../utils/captcha");
@@ -18,10 +19,19 @@ const solve = (id) => {
 
 const c1 = createCaptcha();
 assert(c1.image.startsWith("data:image/svg+xml;base64,"));
-assert(!Buffer.from(c1.image.split(",")[1], "base64").toString().includes("undefined"));
+const svg = Buffer.from(c1.image.split(",")[1], "base64").toString();
+assert(!svg.includes("<text"), "the CAPTCHA answer is not embedded as extractable SVG text");
+assert(!svg.includes("undefined"));
 const answer = solve(c1.id);
 assert.strictEqual(verifyCaptcha(c1.id, answer.toLowerCase()), true, "correct (case-insensitive) answer passes");
 assert.strictEqual(verifyCaptcha(c1.id, answer), false, "same captcha cannot be reused");
+assert.strictEqual(svg.includes(answer), false, "the answer is not present as plaintext in the image source");
+
+assert.strictEqual(passwordPolicyError("Abcdef1!"), "");
+assert.match(passwordPolicyError("Abcdefgh1"), /symbol/i);
+assert.match(passwordPolicyError("Abcdefg!"), /number/i);
+assert.match(passwordPolicyError("1234567!"), /letter/i);
+assert.match(passwordPolicyError("Ab1!"), /8 characters/i);
 
 const c2 = createCaptcha();
 const right2 = solve(c2.id); // read before verifying: a verify call removes the entry

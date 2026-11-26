@@ -19,7 +19,7 @@ export default function PortalFooter() {
           ))}
         </ul>
         <p className="portal-footer__legal">
-          © {new Date().getFullYear()} National Grievance Redressal Portal. For help, call the helpline: 1947.
+          © {new Date().getFullYear()} Grievance Redressal Portal. For help, call the helpline: 1947.
         </p>
       </div>
     </footer>

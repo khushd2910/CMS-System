@@ -4,12 +4,13 @@ import { CircleCheck, Lock } from "lucide-react";
 import PortalLayout from "../components/layout/PortalLayout";
 import TextField from "../components/ui/TextField";
 import PasswordField from "../components/ui/PasswordField";
+import CaptchaField, { useCaptcha } from "../components/ui/CaptchaField";
 import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
 import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
 import { authService } from "../services/authService";
-import { validateIdentifier, validatePassword } from "../utils/validators";
+import { validateCaptchaAnswer, validateIdentifier, validatePassword } from "../utils/validators";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Citizen Login" }];
 const BENEFITS = [
@@ -19,13 +20,16 @@ const BENEFITS = [
   "Access your grievance history.",
 ];
 
-const EMPTY_FORM = { identifier: "", password: "" };
-const NO_ERRORS = { identifier: "", password: "" };
+const EMPTY_FORM = { identifier: "", password: "", captchaAnswer: "" };
+const NO_ERRORS = { identifier: "", password: "", captchaAnswer: "" };
 
 // Turns whatever went wrong into one clear sentence for the citizen.
 function describeLoginError(error) {
   if (error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED") {
-    return "Your email address has not been verified yet. Open the verification link we emailed you, or request a new one below.";
+    return "Your email address has not been verified yet. Enter the six-digit code we emailed you, or request a new one below.";
+  }
+  if (error.status === 400 && error.serverCode === "CAPTCHA_INVALID") {
+    return "The security code was incorrect or expired. Please enter the new code.";
   }
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
@@ -38,6 +42,7 @@ export default function CitizenLogin() {
   const { status, user, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { captcha, loading: captchaLoading, loadError, refresh: refreshCaptcha } = useCaptcha();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [remember, setRemember] = useState(false);
@@ -49,12 +54,17 @@ export default function CitizenLogin() {
 
   const identifierRef = useRef(null);
   const passwordRef = useRef(null);
+  const captchaRef = useRef(null);
 
   // Already signed in? Go to the landing page for THIS person's role (a citizen, admin or manager
   // each has their own), not always the citizen area.
   if (status === "authenticated") return <Navigate to={homePathForRole(user?.role)} replace />;
 
-  const validators = { identifier: validateIdentifier, password: validatePassword };
+  const validators = {
+    identifier: validateIdentifier,
+    password: validatePassword,
+    captchaAnswer: validateCaptchaAnswer,
+  };
 
   function handleChange(event) {
     const { name, value } = event.target;
@@ -96,22 +106,34 @@ export default function CitizenLogin() {
     const nextErrors = {
       identifier: validateIdentifier(form.identifier),
       password: validatePassword(form.password),
+      captchaAnswer: !captcha
+        ? "The security code is not loaded. Refresh it and try again."
+        : validateCaptchaAnswer(form.captchaAnswer),
     };
     setErrors(nextErrors);
     if (nextErrors.identifier) return identifierRef.current?.focus();
     if (nextErrors.password) return passwordRef.current?.focus();
+    if (nextErrors.captchaAnswer) return captchaRef.current?.focus();
 
     setSubmitting(true);
     try {
-      await login({ identifier: form.identifier.trim(), password: form.password, remember });
+      await login({
+        identifier: form.identifier.trim(),
+        password: form.password,
+        remember,
+        captchaId: captcha.id,
+        captchaAnswer: form.captchaAnswer.trim(),
+      });
       // Send the person back to the page they originally wanted, if any.
       navigate(location.state?.from?.pathname || CITIZEN_HOME_PATH, { replace: true });
     } catch (error) {
       setFormError(describeLoginError(error));
-      setNeedsVerification(error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED");
-      setForm((current) => ({ ...current, password: "" })); // never keep a wrong password
+      const emailNotVerified = error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED";
+      setNeedsVerification(emailNotVerified);
+      setForm((current) => ({ ...current, password: "", captchaAnswer: "" })); // never keep a wrong password
       setSubmitting(false);
-      passwordRef.current?.focus();
+      refreshCaptcha();
+      (error.serverCode === "CAPTCHA_INVALID" ? captchaRef : passwordRef).current?.focus();
     }
   }
 
@@ -135,13 +157,22 @@ export default function CitizenLogin() {
                   loadingText="Sending…"
                   onClick={handleResend}
                 >
-                  Resend verification email
+                  Resend verification code
                 </Button>
                 {resendState === "sent" && (
-                  <p role="status">If this account is waiting for verification, a new email has been sent.</p>
+                  <p role="status">
+                    If this account is waiting for verification, a new code has been sent.{" "}
+                    <Link
+                      className="link"
+                      to="/verify-email"
+                      state={{ email: form.identifier.includes("@") ? form.identifier.trim().toLowerCase() : "" }}
+                    >
+                      Enter the code
+                    </Link>
+                  </p>
                 )}
                 {resendState === "failed" && (
-                  <p role="alert">Could not send the email right now. Please try again in a few minutes.</p>
+                  <p role="alert">Could not send the code right now. Please try again in a few minutes.</p>
                 )}
               </div>
             )}
@@ -194,6 +225,26 @@ export default function CitizenLogin() {
                   Forgot Password?
                 </Link>
               </div>
+            </fieldset>
+
+            <fieldset className="panel">
+              <legend className="panel__title">Security Verification</legend>
+              <CaptchaField
+                captcha={captcha}
+                loading={captchaLoading}
+                loadError={loadError}
+                onRefresh={() => {
+                  setForm((current) => ({ ...current, captchaAnswer: "" }));
+                  setErrors((current) => ({ ...current, captchaAnswer: "" }));
+                  refreshCaptcha();
+                }}
+                inputId="captchaAnswer"
+                value={form.captchaAnswer}
+                onChange={handleChange}
+                error={errors.captchaAnswer}
+                readOnly={submitting}
+                inputRef={captchaRef}
+              />
             </fieldset>
 
             <div className="login-form__actions">

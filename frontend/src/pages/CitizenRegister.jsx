@@ -36,14 +36,8 @@ const GENDERS = [
   { value: "other", text: "Other" },
   { value: "prefer_not_to_say", text: "Prefer not to say" },
 ];
-const LANGUAGES = [
-  { value: "en", text: "English" },
-  { value: "hi", text: "Hindi" },
-  { value: "gu", text: "Gujarati" },
-];
-
 const EMPTY_FORM = {
-  name: "", dob: "", gender: "", mobile: "", email: "", language: "",
+  name: "", dob: "", gender: "", mobile: "", email: "",
   password: "", confirm: "",
   state: "", district: "", city: "", village: "", address: "", landmark: "", pin: "",
   agree: false,
@@ -83,6 +77,9 @@ function describeRegisterError(error) {
     return "An account with this email address already exists. Try signing in instead.";
   }
   if (error.status === 409) return "An account with these details already exists. Try signing in instead.";
+  if (error.status === 503 && error.serverCode === "EMAIL_DELIVERY_FAILED") {
+    return "Your account was created, but we could not send the code. Go to login, enter your password, and choose Resend verification code.";
+  }
   if (error.status === 503) return "The email service is unavailable right now. Please try again later.";
   if (error.status === 400) return error.message;
   return "The service is temporarily unavailable. Please try again in a few minutes.";
@@ -166,7 +163,7 @@ export default function CitizenRegister() {
         mobileNo: normalizeMobile(form.mobile),
         dateOfBirth: form.dob || undefined,
         gender: form.gender || undefined,
-        preferredLanguage: form.language || undefined,
+        termsAccepted: form.agree,
         address: {
           state: form.state,
           district: form.district,
@@ -197,13 +194,16 @@ export default function CitizenRegister() {
           </h1>
           <p className="card__subtitle" role="status">
             {needsVerification
-              ? `Your account has been created. We sent a verification link to ${form.email.trim()}. Open it to activate your account, then sign in.`
+              ? `Your account has been created. Enter the six-digit verification code sent to ${form.email.trim()} to activate your account.`
               : "Your citizen account has been created and you are signed in. You can now submit grievances and track their progress."}
           </p>
           <div className="login-form__actions">
             {needsVerification ? (
-              <Button type="button" onClick={() => navigate("/login", { replace: true })}>
-                Go to Login
+              <Button
+                type="button"
+                onClick={() => navigate("/verify-email", { state: { email: form.email.trim().toLowerCase() } })}
+              >
+                Enter Verification Code
               </Button>
             ) : (
               <Button type="button" onClick={() => navigate(CITIZEN_HOME_PATH, { replace: true })}>
@@ -261,10 +261,6 @@ export default function CitizenRegister() {
                     autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="example@mail.com"
                     value={form.email} onChange={handleChange} readOnly={submitting} error={errors.email}
                   />
-                  <SelectField
-                    id="language" name="language" label="Preferred Language" placeholder="Select"
-                    options={LANGUAGES} value={form.language} onChange={handleChange} disabled={submitting}
-                  />
                 </fieldset>
 
                 <fieldset className="panel">
@@ -272,7 +268,7 @@ export default function CitizenRegister() {
                   <PasswordField
                     id="password" name="password" label="Create Password" required
                     autoComplete="new-password" placeholder="Enter password"
-                    hint="At least 8 characters, with a letter and a number."
+                    hint="At least 8 characters, with a letter, a number, and a symbol."
                     value={form.password} onChange={handleChange} readOnly={submitting} error={errors.password}
                   />
                   {form.password && (

@@ -34,8 +34,13 @@ export function AuthProvider({ children }) {
     return () => controller.abort();
   }, []);
 
-  const login = useCallback(async ({ identifier, password, remember }) => {
-    const { user: loggedInUser, token } = await authService.login({ identifier, password });
+  const login = useCallback(async ({ identifier, password, remember, captchaId, captchaAnswer }) => {
+    const { user: loggedInUser, token } = await authService.login({
+      identifier,
+      password,
+      captchaId,
+      captchaAnswer,
+    });
 
     // This page is the *citizen* login. A staff account is rejected before
     // anything is saved, so no session is created for it.
@@ -89,6 +94,20 @@ export function AuthProvider({ children }) {
     return { requiresVerification: false };
   }, []);
 
+  const verifyEmail = useCallback(async (payload) => {
+    const { user: verifiedUser, token } = await authService.verifyEmail(payload);
+    if (!token || !CITIZEN_PORTAL_ROLES.includes(verifiedUser?.role)) {
+      const error = new Error("Email verification did not return a valid citizen session.");
+      error.status = 500;
+      throw error;
+    }
+
+    tokenStorage.set(token, false);
+    setUser(verifiedUser);
+    setStatus("authenticated");
+    return verifiedUser;
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await authService.logout(); // the server just acknowledges; the token is stateless
@@ -100,8 +119,8 @@ export function AuthProvider({ children }) {
     setStatus("anonymous");
   }, []);
 
-  const value = useMemo(() => ({ user, status, login, adminLogin, managerLogin, register, logout }),
-    [user, status, login, adminLogin, managerLogin, register, logout]);
+  const value = useMemo(() => ({ user, status, login, adminLogin, managerLogin, register, verifyEmail, logout }),
+    [user, status, login, adminLogin, managerLogin, register, verifyEmail, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const { User, Department, AuditLog } = require("../models");
 const { getPagination, paginationMeta } = require("../utils/pagination");
 const { EVENTS, OUTCOMES, recordAudit } = require("../utils/audit");
+const { passwordPolicyError } = require("../utils/password");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -55,8 +56,9 @@ const createUser = async (req, res, next) => {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
             return res.status(400).json({ message: "A valid email address is required." });
         }
-        if (password.length < 8) {
-            return res.status(400).json({ message: "Password must be at least 8 characters." });
+        const passwordError = passwordPolicyError(password);
+        if (passwordError) {
+            return res.status(400).json({ message: passwordError });
         }
         if (!["admin", "manager"].includes(role)) {
             return res.status(400).json({ message: "Admin-created users must have the admin or manager role." });

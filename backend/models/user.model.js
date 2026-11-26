@@ -22,8 +22,8 @@ const userSchema = new mongoose.Schema(
             unique: true,
             sparse: true,
         },
-        // Email verification. Left unset for accounts created before this existed (treated as verified);
-        // set to false for new citizens only while REQUIRE_EMAIL_VERIFICATION=true.
+        // Email verification. Left unset for existing accounts (treated as verified);
+        // new citizen accounts may require a one-time email code.
         emailVerified: Boolean,
         emailVerificationTokenHash: {
             type: String,
@@ -33,15 +33,17 @@ const userSchema = new mongoose.Schema(
             type: Date,
             select: false,
         },
+        emailVerificationAttempts: {
+            type: Number,
+            default: 0,
+            min: 0,
+            select: false,
+        },
         // Optional citizen profile fields (added for the registration page).
         dateOfBirth: Date,
         gender: {
             type: String,
             enum: ["male", "female", "other", "prefer_not_to_say"],
-        },
-        preferredLanguage: {
-            type: String,
-            enum: ["en", "hi", "gu"],
         },
         address: {
             state: { type: String, trim: true },
@@ -52,6 +54,11 @@ const userSchema = new mongoose.Schema(
             landmark: { type: String, trim: true },
             pinCode: { type: String, trim: true },
         },
+        termsAccepted: {
+            type: Boolean,
+            default: false,
+        },
+        termsAcceptedAt: Date,
         email: {
             type: String,
             required: true,

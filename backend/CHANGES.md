@@ -77,24 +77,25 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - `POST /api/auth/admin-login` body `{ email, password, captchaId, captchaAnswer }`. Order: lock-out check, CAPTCHA, credentials.
   Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; too many failures -> 429 (rules below).
 - The CAPTCHA store still lives in memory (one server process). The lock-out and the audit trail now live in the database: see "Staff login: lock-out and audit trail" below.
-- `POST /api/auth/login` is unchanged, so an admin can still sign in there without a CAPTCHA (see the note in the reply).
+- Citizen login also requires the one-use CAPTCHA from `GET /api/auth/captcha`; staff use their role-specific CAPTCHA endpoints.
 - Unit checks: `npm run test:unit`. End-to-end checks: `npm run test:staff`.
 
 ## Department Manager login
 - `POST /api/auth/manager-login` (same body and CAPTCHA as admin-login) accepts `role: "manager"` accounts only. Wrong account, wrong password and wrong role all return the same 401 `Invalid Manager ID or Password.`
 - Admin and manager share one handler (`createStaffLogin`) but have separate endpoints and separate lock-out counters (key = role + email).
-- A manager can sign in even if no department is assigned yet; the existing access rules then show them no grievances (`canAccessGrievance`). `POST /api/auth/login` is unchanged and still lets a manager in without a CAPTCHA.
+- A manager can sign in even if no department is assigned yet; the existing access rules then show them no grievances (`canAccessGrievance`).
 
 ## Citizen login fixes
-- `POST /api/auth/login` is now CITIZEN-ONLY. Body `{ identifier, password }` (`identifier` = email or 10-digit mobile, with or without +91; `{ email }` still works). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). The workflow test now signs staff tokens directly instead of calling `/auth/login`.
+- `POST /api/auth/login` is CITIZEN-ONLY. Body `{ identifier, password, captchaId, captchaAnswer }` (`identifier` = email or 10-digit mobile, with or without +91; `{ email }` remains accepted). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). CAPTCHA challenges are one-use and expire after five minutes.
 - `User.mobileNo` is unique (sparse). If your database already has duplicate mobile numbers the index cannot be built: fix them first. Numbers saved by the very first version of `register` may be un-normalised (e.g. with spaces) and will not match a mobile login until cleaned to 10 digits.
 - `POST /api/auth/register` returns 409 with `code` `EMAIL_EXISTS` or `MOBILE_EXISTS`.
+- Registration requires name, email, mobile, state, district, city/taluka, complete address, PIN, and `termsAccepted: true`. It records the terms acceptance and server timestamp. New passwords require at least eight characters with a letter, number, and symbol.
 
-## Email verification (optional, off by default)
-- Set `REQUIRE_EMAIL_VERIFICATION=true` (and SMTP_* ) to turn it on. Then a new citizen is created with `emailVerified: false`, receives no token, and gets a 24-hour link `CLIENT_URL/verify-email/:token`.
-- `POST /api/auth/verify-email/:token` (repeatable) and `POST /api/auth/resend-verification { identifier }` (generic answer, max 5 per 15 min per IP+identifier).
-- Login returns 403 `EMAIL_NOT_VERIFIED` only after the correct password. Accounts with `emailVerified` unset (all existing ones) are treated as verified.
-- Without SMTP: outside production the link is printed to the server console; in production registration is refused (503) so no unverifiable accounts are created.
+## Email verification (controlled by `REQUIRE_EMAIL_VERIFICATION`)
+- Set `REQUIRE_EMAIL_VERIFICATION=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM` in the private `backend/.env`. Gmail requires a Google App Password with 2-Step Verification enabled; the normal account password will not work. Set `MAIL_FROM` to the authenticated mailbox or an authorized sender.
+- A new citizen is created as unverified and receives a six-digit code by email. `POST /api/auth/verify-email { email, code }` verifies it and returns a citizen session so the frontend can sign the citizen in and open their dashboard. Codes expire in 10 minutes, are stored as hashes, work once, and allow at most five attempts; resending invalidates the previous code. Resend uses `POST /api/auth/resend-verification { identifier }` and is limited to five per 15 minutes per IP+identifier.
+- `POST /api/auth/verify-email/:token` remains only for links issued by earlier versions. Login returns 403 `EMAIL_NOT_VERIFIED` only after the correct password. Accounts with `emailVerified` unset (all existing ones) are treated as verified.
+- Email sending is awaited and failures return 503 instead of reporting successful delivery. Missing SMTP configuration also returns 503. Check the backend log for a safe SMTP error code, then run `npm run test-email` with `TEST_EMAIL` set to a mailbox you can access.
 - MOBILE verification is NOT implemented (needs an SMS/OTP provider).
 - Tests: `npm run test:citizen` (needs a test database, wipes it).
 

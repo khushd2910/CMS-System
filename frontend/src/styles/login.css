@@ -33,7 +33,8 @@
   width: 100%;
 }
 
-.panel__title + .field {
+.panel__title + .field,
+.panel__title + .captcha {
   clear: both;
   margin-top: 12px;
 }

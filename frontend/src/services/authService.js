@@ -4,10 +4,16 @@ import { request } from "./apiClient";
 export const authService = {
   // Citizen sign-in. identifier = email address or 10-digit mobile number.
   // -> { user: {id, role, name, mobileNo, email, departmentId}, token, tokenType, expiresIn }
-  login: ({ identifier, password }) => request("/auth/login", { method: "POST", body: { identifier, password } }),
+  login: ({ identifier, password, captchaId, captchaAnswer }) =>
+    request("/auth/login", { method: "POST", body: { identifier, password, captchaId, captchaAnswer } }),
 
-  // -> { message }. Single-use-safe: opening the same link twice still succeeds.
-  verifyEmail: (token) => request(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST" }),
+  // -> signed-in citizen session. Code is single-use, expires after ten minutes, and allows five attempts.
+  verifyEmail: ({ email, code }) =>
+    request("/auth/verify-email", { method: "POST", body: { email, code } }),
+
+  // Compatibility for verification links sent before the OTP flow was enabled.
+  verifyEmailLink: (token, options) =>
+    request(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST", ...options }),
 
   // -> { message }. The answer is the same whether or not the account exists.
   resendVerification: ({ identifier }) =>

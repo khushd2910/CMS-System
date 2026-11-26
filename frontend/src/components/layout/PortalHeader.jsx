@@ -16,11 +16,11 @@ export default function PortalHeader() {
   return (
     <header className="portal-header">
       <div className="container portal-header__inner">
-        <Link to="/" className="portal-header__brand" aria-label="National Grievance Redressal Portal, home">
+        <Link to="/" className="portal-header__brand" aria-label="Grievance Redressal Portal, home">
           <span className="portal-header__emblem">
             <PortalEmblem size={36} />
           </span>
-          <span className="portal-header__title">Private Grievance Redressal Portal</span>
+          <span className="portal-header__title">Grievance Redressal Portal</span>
         </Link>
 
         <div className="portal-header__meta">

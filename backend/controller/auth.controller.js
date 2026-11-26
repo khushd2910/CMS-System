@@ -7,6 +7,7 @@ const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/emai
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
 const { getLockStatus } = require("../utils/login-throttle");
 const { recordAudit, normalizeIdentifier, clientIp } = require("../utils/audit");
+const { passwordPolicyError } = require("../utils/password");
 
 const publicUser = (user) => ({
     id: user._id,
@@ -36,29 +37,22 @@ const identifierQuery = (identifier) => {
     return /^[6-9]\d{9}$/.test(mobile) ? { mobileNo: mobile } : null;
 };
 
-const newVerificationToken = () => {
-    const token = crypto.randomBytes(32).toString("hex");
+const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
+
+const newVerificationCode = () => {
+    const code = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
     return {
-        token,
-        hash: crypto.createHash("sha256").update(token).digest("hex"),
-        expires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        code,
+        hash: crypto.createHash("sha256").update(code).digest("hex"),
+        expires: new Date(Date.now() + EMAIL_CODE_TTL_MS),
     };
 };
 
-// Sends the verification link. Without SMTP it is only printed to the server console, and only outside production.
-const deliverVerification = ({ email, name, token }) => {
-    const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
-    const verifyUrl = `${clientUrl}/verify-email/${token}`;
-    if (smtpConfigured()) {
-        sendVerificationEmail({ email, name, verifyUrl })
-            .catch((error) => console.error(`Verification email failed: ${error.message}`));
-    } else if (process.env.NODE_ENV !== "production") {
-        console.info(`[dev] SMTP not configured. Verification link for ${email}: ${verifyUrl}`);
-    }
-};
+const deliverVerification = ({ email, name, code }) =>
+    sendVerificationEmail({ email, name, code });
 
 const GENDERS = ["male", "female", "other", "prefer_not_to_say"];
-const LANGUAGES = ["en", "hi", "gu"];
 const clean = (value) => (typeof value === "string" ? value.trim() : "");
 
 // Normalises "+91 98765-43210" / "098765 43210" to 10 digits.
@@ -81,29 +75,68 @@ const register = async (req, res, next) => {
     try {
         const {
             name, mobileNo, email, password,
-            dateOfBirth, gender, preferredLanguage, address,
+            dateOfBirth, gender, address, termsAccepted,
         } = req.body || {};
         const normalizedName = clean(name);
         const normalizedEmail = clean(email).toLowerCase();
-        if (!normalizedName || !normalizedEmail || typeof password !== "string") {
-            return res.status(400).json({ message: "name, email, and password are required." });
+        if (normalizedName.length < 2) {
+            return res.status(400).json({ message: "Name must be at least 2 characters." });
+        }
+        if (!normalizedEmail) {
+            return res.status(400).json({ message: "Email address is required." });
+        }
+        if (typeof password !== "string") {
+            return res.status(400).json({ message: "Password is required." });
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
             return res.status(400).json({ message: "A valid email address is required." });
         }
-        if (password.length < 8) {
-            return res.status(400).json({ message: "Password must be at least 8 characters." });
+        const passwordError = passwordPolicyError(password);
+        if (passwordError) {
+            return res.status(400).json({ message: passwordError });
         }
 
-        // Optional profile fields: only validated when they are sent, so older clients still work.
-        const profile = {};
-        if (mobileNo !== undefined && clean(mobileNo)) {
-            const mobile = normalizeMobile(mobileNo);
-            if (!/^[6-9]\d{9}$/.test(mobile)) {
-                return res.status(400).json({ message: "A valid 10-digit Indian mobile number is required." });
-            }
-            profile.mobileNo = mobile;
+        const mobile = normalizeMobile(mobileNo);
+        if (!/^[6-9]\d{9}$/.test(mobile)) {
+            return res.status(400).json({ message: "A valid 10-digit Indian mobile number is required." });
         }
+        if (!address || typeof address !== "object" || Array.isArray(address)) {
+            return res.status(400).json({ message: "Address is required." });
+        }
+        const normalizedAddress = {
+            state: clean(address.state),
+            district: clean(address.district),
+            cityOrTaluka: clean(address.cityOrTaluka),
+            villageOrWard: clean(address.villageOrWard),
+            line: clean(address.line),
+            landmark: clean(address.landmark),
+            pinCode: clean(address.pinCode),
+        };
+        if (
+            !normalizedAddress.state ||
+            !normalizedAddress.district ||
+            !normalizedAddress.cityOrTaluka ||
+            !normalizedAddress.line
+        ) {
+            return res.status(400).json({
+                message: "State, district, city or taluka, and complete address are required.",
+            });
+        }
+        if (!/^[1-9]\d{5}$/.test(normalizedAddress.pinCode)) {
+            return res.status(400).json({ message: "PIN code must be 6 digits." });
+        }
+        if (termsAccepted !== true) {
+            return res.status(400).json({
+                message: "You must accept the Terms and Conditions and Privacy Policy to register.",
+            });
+        }
+
+        const profile = {
+            mobileNo: mobile,
+            address: normalizedAddress,
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
+        };
         if (clean(dateOfBirth)) {
             const dob = new Date(dateOfBirth);
             if (Number.isNaN(dob.getTime()) || dob > new Date()) {
@@ -114,27 +147,6 @@ const register = async (req, res, next) => {
         if (clean(gender)) {
             if (!GENDERS.includes(gender)) return res.status(400).json({ message: "Gender is not valid." });
             profile.gender = gender;
-        }
-        if (clean(preferredLanguage)) {
-            if (!LANGUAGES.includes(preferredLanguage)) {
-                return res.status(400).json({ message: "Preferred language is not valid." });
-            }
-            profile.preferredLanguage = preferredLanguage;
-        }
-        if (address && typeof address === "object") {
-            const pinCode = clean(address.pinCode);
-            if (pinCode && !/^[1-9]\d{5}$/.test(pinCode)) {
-                return res.status(400).json({ message: "PIN code must be 6 digits." });
-            }
-            profile.address = {
-                state: clean(address.state),
-                district: clean(address.district),
-                cityOrTaluka: clean(address.cityOrTaluka),
-                villageOrWard: clean(address.villageOrWard),
-                line: clean(address.line),
-                landmark: clean(address.landmark),
-                pinCode,
-            };
         }
 
         const duplicate = await User.findOne({
@@ -151,13 +163,13 @@ const register = async (req, res, next) => {
         }
 
         const mustVerify = requireEmailVerification();
-        if (mustVerify && !smtpConfigured() && process.env.NODE_ENV === "production") {
+        if (mustVerify && !smtpConfigured()) {
             return res.status(503).json({
                 message: "Email service is not available. Please try again later.",
                 code: "EMAIL_UNAVAILABLE",
             });
         }
-        const verification = mustVerify ? newVerificationToken() : null;
+        const verification = mustVerify ? newVerificationCode() : null;
 
         const user = await User.create({
             name: normalizedName,
@@ -169,14 +181,22 @@ const register = async (req, res, next) => {
                 emailVerified: false,
                 emailVerificationTokenHash: verification.hash,
                 emailVerificationExpires: verification.expires,
+                emailVerificationAttempts: 0,
             }),
         });
 
         if (verification) {
-            // No token is issued yet: the citizen signs in after confirming their email.
-            deliverVerification({ email: user.email, name: user.name, token: verification.token });
+            try {
+                await deliverVerification({ email: user.email, name: user.name, code: verification.code });
+            } catch (error) {
+                console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
+                return res.status(503).json({
+                    message: "We could not send your verification code. Please try again later.",
+                    code: "EMAIL_DELIVERY_FAILED",
+                });
+            }
             return res.status(201).json({
-                message: "Registration successful. Check your email to verify your address before signing in.",
+                message: "Registration successful. Enter the verification code sent to your email before signing in.",
                 requiresVerification: true,
                 user: publicUser(user),
             });
@@ -193,9 +213,12 @@ const login = async (req, res, next) => {
         // so older clients keep working.
         const raw = req.body?.identifier ?? req.body?.email;
         const identifier = typeof raw === "string" ? raw.trim() : "";
-        const { password } = req.body || {};
+        const { password, captchaId, captchaAnswer } = req.body || {};
         if (!identifier || typeof password !== "string" || !password) {
             return res.status(400).json({ message: "Email or mobile number and password are required." });
+        }
+        if (!verifyCaptcha(captchaId, captchaAnswer)) {
+            return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
         }
 
         const query = identifierQuery(identifier);
@@ -242,6 +265,76 @@ const verifyEmail = async (req, res, next) => {
     }
 };
 
+const verifyEmailCode = async (req, res, next) => {
+    try {
+        const email = clean(req.body?.email).toLowerCase();
+        const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+        const invalidResponse = {
+            message: "The verification code is invalid, expired, or has reached its attempt limit.",
+            code: "EMAIL_CODE_INVALID",
+        };
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !/^\d{6}$/.test(code)) {
+            return res.status(400).json(invalidResponse);
+        }
+
+        const user = await User.findOne({ email, role: "citizen", emailVerified: false })
+            .select("+emailVerificationTokenHash +emailVerificationExpires +emailVerificationAttempts");
+        const storedHash = user?.emailVerificationTokenHash;
+        const expires = user?.emailVerificationExpires;
+        const attempts = Number.isInteger(user?.emailVerificationAttempts) ? user.emailVerificationAttempts : 0;
+        if (
+            !user ||
+            !/^[a-f\d]{64}$/i.test(storedHash || "") ||
+            !(expires instanceof Date) ||
+            expires <= new Date() ||
+            attempts >= EMAIL_CODE_MAX_ATTEMPTS
+        ) {
+            return res.status(400).json(invalidResponse);
+        }
+
+        const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+        const sameCode = crypto.timingSafeEqual(Buffer.from(codeHash, "hex"), Buffer.from(storedHash, "hex"));
+        const attemptLimit = {
+            $or: [
+                { emailVerificationAttempts: { $lt: EMAIL_CODE_MAX_ATTEMPTS } },
+                { emailVerificationAttempts: { $exists: false } },
+            ],
+        };
+        if (!sameCode) {
+            await User.updateOne(
+                {
+                    _id: user._id,
+                    emailVerified: false,
+                    emailVerificationTokenHash: storedHash,
+                    emailVerificationExpires: { $gt: new Date() },
+                    ...attemptLimit,
+                },
+                { $inc: { emailVerificationAttempts: 1 } }
+            );
+            return res.status(400).json(invalidResponse);
+        }
+
+        const verified = await User.findOneAndUpdate(
+            {
+                _id: user._id,
+                emailVerified: false,
+                emailVerificationTokenHash: storedHash,
+                emailVerificationExpires: { $gt: new Date() },
+                ...attemptLimit,
+            },
+            {
+                $set: { emailVerified: true, emailVerificationAttempts: 0 },
+                $unset: { emailVerificationTokenHash: "", emailVerificationExpires: "" },
+            },
+            { returnDocument: "after" }
+        );
+        if (!verified) return res.status(400).json(invalidResponse);
+        return res.json(authResponse(verified));
+    } catch (error) {
+        return next(error);
+    }
+};
+
 // At most 5 resend requests per IP + account every 15 minutes (kept in memory: it only protects the
 // mailbox from being flooded, it does not guard a password).
 const RESEND_WINDOW_MS = 15 * 60 * 1000;
@@ -261,21 +354,37 @@ const resendAllowed = (key) => {
 
 const resendVerification = async (req, res, next) => {
     const generic = {
-        message: "If this account is waiting for email verification, a new verification email has been sent.",
+        message: "If this account is waiting for email verification, a new code has been sent.",
     };
     try {
+        if (requireEmailVerification() && !smtpConfigured()) {
+            return res.status(503).json({
+                message: "Email service is not available. Please try again later.",
+                code: "EMAIL_UNAVAILABLE",
+            });
+        }
         const raw = req.body?.identifier;
         const identifier = typeof raw === "string" ? raw.trim() : "";
         const query = identifier ? identifierQuery(identifier) : null;
         if (!query || !resendAllowed(`${clientIp(req)}|${identifier.toLowerCase()}`)) return res.json(generic);
 
-        const user = await User.findOne(query).select("+emailVerificationTokenHash +emailVerificationExpires");
+        const user = await User.findOne(query)
+            .select("+emailVerificationTokenHash +emailVerificationExpires +emailVerificationAttempts");
         if (user && user.role === "citizen" && user.emailVerified === false && requireEmailVerification()) {
-            const verification = newVerificationToken();
+            const verification = newVerificationCode();
             user.emailVerificationTokenHash = verification.hash;
             user.emailVerificationExpires = verification.expires;
+            user.emailVerificationAttempts = 0;
             await user.save();
-            deliverVerification({ email: user.email, name: user.name, token: verification.token });
+            try {
+                await deliverVerification({ email: user.email, name: user.name, code: verification.code });
+            } catch (error) {
+                console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
+                return res.status(503).json({
+                    message: "We could not send your verification code. Please try again later.",
+                    code: "EMAIL_DELIVERY_FAILED",
+                });
+            }
         }
         return res.json(generic); // same answer whether or not the account exists
     } catch (error) {
@@ -330,8 +439,9 @@ const resetPassword = async (req, res, next) => {
         if (!token) {
             return res.status(400).json({ message: "Password reset token is required." });
         }
-        if (password.length < 8) {
-            return res.status(400).json({ message: "Password must be at least 8 characters." });
+        const passwordError = passwordPolicyError(password);
+        if (passwordError) {
+            return res.status(400).json({ message: passwordError });
         }
 
         const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -427,5 +537,5 @@ const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password
 
 module.exports = {
     register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
-    verifyEmail, resendVerification,
+    verifyEmail, verifyEmailCode, resendVerification,
 };

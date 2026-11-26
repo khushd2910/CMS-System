@@ -8,7 +8,7 @@ import PortalFooter from "./PortalFooter";
 export default function PortalLayout({ title, breadcrumb, children }) {
   return (
     <div className="portal">
-      <title>{`${title} | Private Grievance Redressal Portal`}</title>
+      <title>{`${title} | Grievance Redressal Portal`}</title>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
