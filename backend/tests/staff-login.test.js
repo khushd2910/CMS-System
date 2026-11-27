@@ -6,7 +6,9 @@ process.env.MONGO_DB_NAME = process.env.MONGO_DB_NAME || "cms_test";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017";
 process.env.TRUST_PROXY = "1"; // lets the tests pretend to be different visitors with X-Forwarded-For
 process.env.NODE_ENV = "test";
-delete process.env.SMTP_HOST;
+process.env.SMTP_HOST = "smtp.test";
+process.env.SMTP_USER = "test@example.test";
+process.env.SMTP_PASS = "test-password";
 if (!/test/i.test(process.env.MONGO_DB_NAME)) {
     console.error(`Refusing to run: MONGO_DB_NAME "${process.env.MONGO_DB_NAME}" does not contain "test".`);
     process.exit(1);
@@ -20,10 +22,17 @@ const mongoose = require("mongoose");
 // The real CAPTCHA is covered by test:unit. Here the answer "GOOD" always passes so many logins are quick.
 const captchaModule = require("../utils/captcha");
 captchaModule.verifyCaptcha = (id, answer) => answer === "GOOD";
+const otpCodes = new Map();
+const emailModule = require("../utils/email");
+emailModule.sendAdminLoginOtpEmail = async ({ email, code }) => {
+    otpCodes.set(email.toLowerCase(), code);
+    return { accepted: [email] };
+};
+emailModule.sendGrievanceStatusEmail = async () => ({ accepted: [] });
 
 const connectDB = require("../config/db");
 const { app } = require("../index");
-const { User, Department, Grievance, AuditLog } = require("../models");
+const { User, Department, Grievance, AuditLog, AdminLoginChallenge } = require("../models");
 const { LIMITS, WINDOW_MS } = require("../utils/login-throttle");
 
 let server, base, nextIp = 10;
@@ -40,8 +49,17 @@ const call = async (method, path, { token, ip, body } = {}) => {
     });
     return { status: res.status, headers: res.headers, body: await res.json().catch(() => ({})) };
 };
-const staffLogin = (role, email, password, { ip, captcha = "GOOD" } = {}) =>
-    call("POST", `/api/auth/${role}-login`, { ip, body: { email, password, captchaId: "x", captchaAnswer: captcha } });
+const startAdminLogin = (email, password, { ip, captcha = "GOOD" } = {}) =>
+    call("POST", "/api/auth/admin-login", { ip, body: { email, password, captchaId: "x", captchaAnswer: captcha } });
+const verifyAdminOtp = (challengeId, code, ip) =>
+    call("POST", "/api/auth/admin-login/verify-otp", { ip, body: { challengeId, code } });
+const staffLogin = async (role, email, password, { ip, captcha = "GOOD" } = {}) => {
+    const response = role === "admin"
+        ? await startAdminLogin(email, password, { ip, captcha })
+        : await call("POST", `/api/auth/${role}-login`, { ip, body: { email, password, captchaId: "x", captchaAnswer: captcha } });
+    if (role !== "admin" || response.status !== 202) return response;
+    return verifyAdminOtp(response.body.challengeId, otpCodes.get(email.toLowerCase()), ip);
+};
 const GOOD = "Passw0rd1!";
 const failMany = async (role, email, times, ip) => { for (let i = 0; i < times; i += 1) await staffLogin(role, email, "wrong", { ip }); };
 // Pretends every log entry is `minutes` older (plain updates, so it works on any MongoDB-compatible server).
@@ -70,8 +88,60 @@ const reset = async () => { await AuditLog.deleteMany({}); };
     const manager = await User.create({ name: "Mohan Manager", email: "mgr@t.in", password: pw, role: "manager", departmentId: water._id });
     await User.create({ name: "Cathy Citizen", email: "cit@t.in", password: pw, role: "citizen" });
 
+    console.log("Administrator email verification");
+    await check("admin login issues a challenge without a session until OTP verification", async () => {
+        await reset();
+        const ip = newIp();
+        const started = await startAdminLogin("admin@t.in", GOOD, { ip });
+        assert.equal(started.status, 202);
+        assert.equal(started.body.requiresOtp, true);
+        assert.equal(started.body.token, undefined);
+        const challenge = await AdminLoginChallenge.findById(started.body.challengeId).select("+codeHash");
+        assert.ok(challenge);
+        assert.notEqual(challenge.codeHash, otpCodes.get("admin@t.in"));
+
+        const verified = await verifyAdminOtp(started.body.challengeId, otpCodes.get("admin@t.in"), ip);
+        assert.equal(verified.status, 200);
+        assert.ok(verified.body.token);
+        assert.equal(verified.body.user.role, "admin");
+        assert.equal((await verifyAdminOtp(started.body.challengeId, otpCodes.get("admin@t.in"), ip)).status, 400);
+    });
+    await check("invalid and expired OTP challenges cannot issue a token", async () => {
+        const ip = newIp();
+        const started = await startAdminLogin("admin@t.in", GOOD, { ip });
+        const correctCode = otpCodes.get("admin@t.in");
+        const wrongCode = correctCode === "000000" ? "000001" : "000000";
+        assert.equal((await verifyAdminOtp(started.body.challengeId, wrongCode, ip)).status, 400);
+        assert.equal((await verifyAdminOtp(started.body.challengeId, correctCode, ip)).status, 200);
+
+        const expiredIp = newIp();
+        const expired = await startAdminLogin("admin@t.in", GOOD, { ip: expiredIp });
+        await AdminLoginChallenge.updateOne(
+            { _id: expired.body.challengeId },
+            { $set: { expiresAt: new Date(Date.now() - 1000) } }
+        );
+        assert.equal((await verifyAdminOtp(expired.body.challengeId, otpCodes.get("admin@t.in"), expiredIp)).status, 400);
+    });
+    await check("resending an OTP replaces the previous code", async () => {
+        const ip = newIp();
+        const started = await startAdminLogin("admin@t.in", GOOD, { ip });
+        const oldCode = otpCodes.get("admin@t.in");
+        await AdminLoginChallenge.updateOne(
+            { _id: started.body.challengeId },
+            { $set: { resendAfter: new Date(Date.now() - 1000) } }
+        );
+        const resent = await call("POST", "/api/auth/admin-login/resend-otp", {
+            ip,
+            body: { challengeId: started.body.challengeId },
+        });
+        assert.equal(resent.status, 200);
+        assert.equal((await verifyAdminOtp(started.body.challengeId, oldCode, ip)).status, 400);
+        assert.equal((await verifyAdminOtp(started.body.challengeId, otpCodes.get("admin@t.in"), ip)).status, 200);
+    });
+
     console.log("Audit trail for logins");
     await check("a successful login is recorded with user, role, IP and browser", async () => {
+        await reset();
         const ip = newIp();
         const r = await staffLogin("admin", "ADMIN@t.in", GOOD, { ip });
         assert.equal(r.status, 200);
@@ -203,7 +273,7 @@ const reset = async () => { await AuditLog.deleteMany({}); };
 
     console.log("Staff actions are logged");
     const adminToken = jwt.sign({ userId: String(admin._id), role: "admin" }, process.env.JWT_SECRET);
-    const managerToken = jwt.sign({ userId: String(manager._id), role: "manager" }, process.env.JWT_SECRET);
+    let managerToken = jwt.sign({ userId: String(manager._id), role: "manager" }, process.env.JWT_SECRET);
     await check("grievance assignment, status and priority changes", async () => {
         await reset();
         const g = await Grievance.create({ referenceNumber: "GRV-T-1", title: "Leak", description: "d", category: "Water", citizenId: (await User.findOne({ email: "cit@t.in" }))._id });
@@ -228,12 +298,57 @@ const reset = async () => { await AuditLog.deleteMany({}); };
         const created = await call("POST", "/api/admin/users", { token: adminToken, body: { name: "New Mgr", email: "new@t.in", password: "Passw0rd1!", role: "manager", departmentId: String(water._id) } });
         assert.equal(created.status, 201);
         assert.equal((await call("PATCH", `/api/admin/users/${created.body.user.id}`, { token: adminToken, body: { name: "Renamed" } })).status, 200);
-        assert.equal((await call("POST", "/api/departments", { token: adminToken, body: { name: "Roads" } })).status, 201);
+        assert.equal((await call("POST", "/api/departments", { token: adminToken, body: { name: "Roads", code: "ROADS" } })).status, 201);
         assert.equal((await call("POST", "/api/auth/logout", { token: managerToken })).status, 200);
         const events = (await AuditLog.find({}).sort({ createdAt: 1 })).map((x) => x.event);
         assert.deepEqual(events, ["user_created", "user_updated", "department_created", "staff_logout"]);
         const text = JSON.stringify(await AuditLog.find({}).lean());
         assert.ok(!text.includes("Passw0rd1!"), "the new user's password is not logged");
+    });
+    await check("manager password and status changes invalidate existing sessions", async () => {
+        const managerTokenBefore = jwt.sign({
+            userId: String(manager._id),
+            role: "manager",
+            tv: manager.tokenVersion || 0,
+        }, process.env.JWT_SECRET);
+        const changed = await call("PATCH", `/api/admin/managers/${manager._id}`, {
+            token: adminToken,
+            body: { password: "Changed-Passw0rd2!" },
+        });
+        assert.equal(changed.status, 200);
+        assert.equal((await call("GET", "/api/auth/me", { token: managerTokenBefore })).status, 401);
+        assert.equal((await staffLogin("manager", "mgr@t.in", GOOD, { ip: newIp() })).status, 401);
+        assert.equal((await staffLogin("manager", "mgr@t.in", "Changed-Passw0rd2!", { ip: newIp() })).status, 200);
+        managerToken = jwt.sign({
+            userId: String(manager._id),
+            role: "manager",
+            tv: (await User.findById(manager._id)).tokenVersion,
+        }, process.env.JWT_SECRET);
+        const activeToken = managerToken;
+        assert.equal((await call("PATCH", `/api/admin/managers/${manager._id}`, {
+            token: adminToken,
+            body: { isActive: false },
+        })).status, 200);
+        assert.equal((await call("GET", "/api/auth/me", { token: activeToken })).status, 401);
+        assert.equal((await call("PATCH", `/api/admin/managers/${manager._id}`, {
+            token: adminToken,
+            body: { isActive: true },
+        })).status, 200);
+        assert.equal((await call("GET", "/api/auth/me", { token: activeToken })).status, 401);
+        managerToken = jwt.sign({
+            userId: String(manager._id),
+            role: "manager",
+            tv: (await User.findById(manager._id)).tokenVersion,
+        }, process.env.JWT_SECRET);
+    });
+    await check("admin dashboard returns the summary required by the portal", async () => {
+        const dashboard = await call("GET", "/api/admin/dashboard", { token: adminToken });
+        assert.equal(dashboard.status, 200);
+        assert.equal(dashboard.body.overdueThresholdDays, 7);
+        assert.equal(typeof dashboard.body.stats.totalGrievances, "number");
+        assert.ok(Array.isArray(dashboard.body.departmentSummary));
+        assert.ok(Array.isArray(dashboard.body.recentActivity));
+        assert.ok(Array.isArray(dashboard.body.escalationAlerts));
     });
 
     console.log("GET /api/admin/audit-logs");
@@ -247,7 +362,7 @@ const reset = async () => { await AuditLog.deleteMany({}); };
         const ip = newIp();
         await staffLogin("admin", "admin@t.in", GOOD, { ip });
         await staffLogin("admin", "admin@t.in", "wrong", { ip });
-        await staffLogin("manager", "mgr@t.in", GOOD, { ip });
+        await staffLogin("manager", "mgr@t.in", "Changed-Passw0rd2!", { ip });
         const all = await call("GET", "/api/admin/audit-logs", { token: adminToken });
         assert.equal(all.body.pagination.total, 3);
         assert.equal(all.body.logs[0].identifier, "mgr@t.in", "newest first");

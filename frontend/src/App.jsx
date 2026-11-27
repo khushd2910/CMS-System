@@ -5,6 +5,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminOtpVerification from "./pages/AdminOtpVerification";
 import ManagerLogin from "./pages/ManagerLogin";
 import VerifyEmail from "./pages/VerifyEmail";
 import ManagerDashboard from "./pages/ManagerDashboard";
@@ -35,6 +36,7 @@ export default function App() {
       />
 
       <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin/verify-otp" element={<AdminOtpVerification />} />
       <Route
         path="/admin/dashboard"
         element={

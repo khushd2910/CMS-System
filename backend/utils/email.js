@@ -121,4 +121,32 @@ const sendVerificationEmail = async ({ email, name, code }) => {
     return sendEmail({ to: email, subject, text, html });
 };
 
-module.exports = { sendEmail, sendGrievanceStatusEmail, sendPasswordResetEmail, sendVerificationEmail };
+const sendAdminLoginOtpEmail = async ({ email, name, code }) => {
+    const subject = "Your administrator sign-in code";
+    const text = [
+        `Hello ${name || "Administrator"},`,
+        "",
+        "Enter this one-time code to finish signing in to the Grievance Redressal Portal:",
+        code,
+        "",
+        "This code expires in 5 minutes and can only be used once.",
+        "If you did not attempt to sign in, change your password and contact support.",
+    ].join("\n");
+    const html = `
+        <p>Hello ${escapeHtml(name || "Administrator")},</p>
+        <p>Enter this one-time code to finish signing in to the Grievance Redressal Portal:</p>
+        <p style="font-size:24px;font-weight:bold;letter-spacing:5px">${escapeHtml(code)}</p>
+        <p>This code expires in 5 minutes and can only be used once.</p>
+        <p>If you did not attempt to sign in, change your password and contact support.</p>
+    `;
+
+    return sendEmail({ to: email, subject, text, html });
+};
+
+module.exports = {
+    sendEmail,
+    sendGrievanceStatusEmail,
+    sendPasswordResetEmail,
+    sendVerificationEmail,
+    sendAdminLoginOtpEmail,
+};

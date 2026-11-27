@@ -13,6 +13,14 @@ const userSchema = new mongoose.Schema(
             required: true,
             trim: true,
         },
+        contactNumber: {
+            type: String,
+            trim: true,
+        },
+        isActive: {
+            type: Boolean,
+            default: true,
+        },
         // Existing accounts with this unset remain valid; new citizen registrations set it on creation.
         emailVerified: Boolean,
         emailVerificationTokenHash: {

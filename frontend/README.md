@@ -1,6 +1,6 @@
 # Grievance Redressal Portal – Frontend
 
-React (Vite) frontend for the CMS project. Current modules: **Citizen Login**, **Citizen Registration**, **Admin Login** and **Department Manager Login**.
+React (Vite) frontend for the CMS project. Current modules include **Citizen Login and Registration**, **Admin Login and Dashboard**, and **Department Manager Login**.
 
 ## Run it
 
@@ -30,7 +30,7 @@ src/
   components/ui/           TextField, PasswordField, Button, Alert
   components/layout/       PortalHeader, NavBar, Breadcrumb, PortalFooter, PortalLayout, PortalEmblem
   components/ProtectedRoute.jsx
-  pages/                   CitizenLogin, CitizenRegister (done), CitizenDashboard + ComingSoon (temporary placeholders)
+  pages/                   Citizen and staff pages, AdminDashboard, admin department/manager/grievance modules
   data/locations.js        State/District/Taluka choices; Gujarat includes all 34 districts and 265 talukas
   styles/                  tokens.css (colours/fonts), base, layout, form, login
 ```
@@ -46,10 +46,13 @@ src/
 
 ## Admin Login notes
 
-- Routes: `/admin/login` (page) and `/admin/dashboard` (temporary placeholder, `ProtectedRoute roles={["admin"]}`).
-- Calls `GET /api/auth/captcha` and `POST /api/auth/admin-login`. The admin token is kept in `sessionStorage` only
-  (no "remember me"); credentials are never stored.
+- Routes: `/admin/login`, `/admin/verify-otp`, and `/admin/dashboard` (`ProtectedRoute roles={["admin"]}`).
+- Sign-in requires the CAPTCHA, email/password, and a one-time code emailed to the administrator. The token is not
+  issued until the code is verified. OTPs expire after five minutes and can be resent after the cooldown.
+- The admin token is kept in `sessionStorage` only (no "remember me"); passwords are never stored client-side and raw OTPs are not retained.
 - Admins sign in with their **email**. The User model has no separate Admin ID field (`SUPPORTS_ADMIN_ID_LOGIN` in `config/auth.config.js`).
+- The dashboard provides grievance totals, department workload, recent activity, urgent alerts, reports, grievance assignment,
+  and department/manager management. Manager password changes invalidate existing manager sessions.
 - "Forgot Password?" links to `/forgot-password`, which is still a placeholder page. An admin-specific recovery
   page has not been built (the backend `forgot-password` / `reset-password` endpoints exist and work for any account with an email).
 

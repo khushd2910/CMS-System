@@ -5,7 +5,9 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 process.env.MONGO_DB_NAME = process.env.MONGO_DB_NAME || "cms_test";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017";
 process.env.NODE_ENV = "test";
-delete process.env.SMTP_HOST;
+process.env.SMTP_HOST = "smtp.test";
+process.env.SMTP_USER = "test@example.test";
+process.env.SMTP_PASS = "test-password";
 if (!/test/i.test(process.env.MONGO_DB_NAME)) {
     console.error(`Refusing to run: MONGO_DB_NAME "${process.env.MONGO_DB_NAME}" does not contain "test".`);
     process.exit(1);
@@ -20,6 +22,12 @@ const mongoose = require("mongoose");
 
 const captchaModule = require("../utils/captcha");
 captchaModule.verifyCaptcha = (id, answer) => answer === "GOOD";
+const otpCodes = new Map();
+const emailModule = require("../utils/email");
+emailModule.sendAdminLoginOtpEmail = async ({ email, code }) => {
+    otpCodes.set(email.toLowerCase(), code);
+    return { accepted: [email] };
+};
 
 const connectDB = require("../config/db");
 const { app } = require("../index");
@@ -35,8 +43,15 @@ const call = async (method, p, { token, body } = {}) => {
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
 };
-const adminLogin = (email, password) =>
-    call("POST", "/api/auth/admin-login", { body: { email, password, captchaId: "x", captchaAnswer: "GOOD" } });
+const adminLogin = async (email, password) => {
+    const started = await call("POST", "/api/auth/admin-login", {
+        body: { email, password, captchaId: "x", captchaAnswer: "GOOD" },
+    });
+    if (started.status !== 202) return started;
+    return call("POST", "/api/auth/admin-login/verify-otp", {
+        body: { challengeId: started.body.challengeId, code: otpCodes.get(email.toLowerCase()) },
+    });
+};
 
 let passed = 0;
 const check = async (name, fn) => {

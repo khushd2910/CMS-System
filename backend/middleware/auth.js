@@ -31,6 +31,9 @@ const authenticate = async (req, res, next) => {
         if (!user) {
             return res.status(401).json({ message: "User account no longer exists." });
         }
+        if (user.isActive === false) {
+            return res.status(401).json({ message: "This account is inactive." });
+        }
 
         // A token made before the last password reset is no longer valid. Tokens issued before this
         // feature existed have no "tv" and count as version 0.

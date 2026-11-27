@@ -109,9 +109,23 @@ export function AuthProvider({ children }) {
     return staffUser;
   }, []);
 
-  const adminLogin = useCallback(
-    (credentials) => staffSignIn(authService.adminLogin(credentials), ADMIN_PORTAL_ROLES),
-    [staffSignIn]
+  const adminLogin = useCallback((credentials) => authService.adminLogin(credentials), []);
+  const verifyAdminOtp = useCallback(async (payload) => {
+    const result = await authService.verifyAdminLoginOtp(payload);
+    if (!result.token || !ADMIN_PORTAL_ROLES.includes(result.user?.role)) {
+      const error = new Error("Verification did not return a valid administrator session.");
+      error.status = 500;
+      throw error;
+    }
+    tokenStorage.set(result.token, false);
+    setSessionExpired(false);
+    setUser(result.user);
+    setStatus("authenticated");
+    return result.user;
+  }, []);
+  const resendAdminOtp = useCallback(
+    (challengeId) => authService.resendAdminLoginOtp({ challengeId }),
+    []
   );
   const managerLogin = useCallback(
     (credentials) => staffSignIn(authService.managerLogin(credentials), MANAGER_PORTAL_ROLES),
@@ -160,8 +174,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, status, sessionExpired, login, adminLogin, managerLogin, register, verifyEmail, logout,
-  }), [user, status, sessionExpired, login, adminLogin, managerLogin, register, verifyEmail, logout]);
+    user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, logout,
+  }), [user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

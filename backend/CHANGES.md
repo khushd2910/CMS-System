@@ -75,10 +75,18 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 ## Admin login (CAPTCHA + admin-only endpoint)
 - `GET /api/auth/captcha` -> `{ id, image, expiresInSeconds }` (self-hosted SVG CAPTCHA, `utils/captcha.js`; one use, 5 min expiry, answer kept only as a hash).
 - `POST /api/auth/admin-login` body `{ email, password, captchaId, captchaAnswer }`. Order: lock-out check, CAPTCHA, credentials.
-  Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; too many failures -> 429 (rules below).
+- A valid password starts email verification and returns HTTP 202 with a `challengeId`; it does not issue a session token. Verify with `POST /api/auth/admin-login/verify-otp { challengeId, code }`. Resend with `POST /api/auth/admin-login/resend-otp { challengeId }`.
+- OTPs are six digits, stored only as SHA-256 hashes, expire after five minutes, allow five attempts, and allow at most three resends after a 60-second cooldown. The challenge is consumed on success; only then is the admin token issued.
+- Wrong CAPTCHA -> 400 `CAPTCHA_INVALID`; unknown account / wrong password / non-admin account -> the SAME 401 `Invalid Admin ID or Password.`; too many failures -> 429 (rules below). Missing SMTP configuration or delivery failure returns 503 and does not issue a token.
 - The CAPTCHA store still lives in memory (one server process). The lock-out and the audit trail now live in the database: see "Staff login: lock-out and audit trail" below.
 - Citizen login also requires the one-use CAPTCHA from `GET /api/auth/captcha`; staff use their role-specific CAPTCHA endpoints.
 - Unit checks: `npm run test:unit`. End-to-end checks: `npm run test:staff`.
+
+## Admin dashboard and staff management
+- `GET /api/admin/dashboard` returns grievance status totals, counts by department, recent status activity, urgent open cases, and the seven-day overdue threshold. Open grievances created at least seven days ago count as overdue.
+- `GET /api/admin/departments` returns departments with manager and grievance counts. Admins create and update departments through `POST/PATCH /api/departments`; department codes are required on creation.
+- `GET/POST /api/admin/managers` and `PATCH /api/admin/managers/:id` support manager listing, creation, updates, activation/deactivation, department assignment, and password changes. Password and account-status changes increment `tokenVersion` to revoke existing manager sessions. Work contact numbers are for staff/office use only; citizen mobile/SMS flows remain removed.
+- The frontend admin dashboard includes overview/report views, grievance assignment, department management, and manager management. Grievance assignment uses the existing admin-only `PATCH /api/grievances/:id/assign-department` endpoint.
 
 ## Department Manager login
 - `POST /api/auth/manager-login` (same body and CAPTCHA as admin-login) accepts `role: "manager"` accounts only. Wrong account, wrong password and wrong role all return the same 401 `Invalid Manager ID or Password.`
@@ -88,7 +96,7 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 ## Email-only citizen registration and login
 - `POST /api/auth/login` is CITIZEN-ONLY. Body `{ identifier, password, captchaId, captchaAnswer }` (`identifier` is an email; `{ email }` remains accepted). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). CAPTCHA challenges are one-use and expire after five minutes.
 - Registration requires name, email, state, district, city/taluka, complete address, PIN, and `termsAccepted: true`. It records the terms acceptance and server timestamp. New passwords require at least eight characters with a letter, number, and symbol.
-- Citizen email verification is mandatory. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM` in the private `backend/.env`. Gmail requires a Google App Password with 2-Step Verification enabled; set `MAIL_FROM` to the authenticated mailbox or an authorized sender.
+- Citizen email verification and administrator login OTP are mandatory. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM` in the private `backend/.env`. Gmail requires a Google App Password with 2-Step Verification enabled; set `MAIL_FROM` to the authenticated mailbox or an authorized sender.
 - `POST /api/auth/register` stores registration details in the expiring `pendingregistrations` collection and emails a six-digit code. It does not create a `User` document or issue a token. `POST /api/auth/verify-email { email, code }` creates the citizen account only after a valid code and returns a citizen session. Codes expire in 10 minutes, are stored as hashes, and allow at most five attempts; resending invalidates the previous code. Pending registrations expire after 24 hours.
 - Resend uses `POST /api/auth/resend-verification { identifier }` and is limited to five requests per 15 minutes per IP+email. Email sending is awaited and failures return 503; failed delivery leaves only a pending registration, never a user account. Missing SMTP configuration also returns 503. Check the backend log for a safe SMTP error code, then run `npm run test-email` with `TEST_EMAIL` set to a mailbox you can access.
 - `POST /api/auth/verify-email/:token` (link-based verification) has been removed; verification emails only contain the six-digit code. Existing accounts with `emailVerified` unset can still verify with `POST /api/auth/verify-email { email, code }` after requesting a new code.
@@ -123,7 +131,7 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - The header badge follows the area of the site: "Admin Portal" under `/admin/...`, "Manager Portal" under `/manager/...`, "Citizen Portal" everywhere else.
 - The admin/manager login screens show "try again in about N minutes" using the real remaining time.
 - `resend-verification` kept its own small in-memory limit (5 per IP + e-mail per 15 minutes).
-- Tests: `npm run test:all` runs every suite. `test:staff` is new (20 checks); `test:unit` now covers the CAPTCHA and the TRUST_PROXY parser.
+- Tests: `npm run test:all` runs every suite. `test:staff` covers admin OTP, staff authentication, management APIs, and audit logs; `test:unit` covers the CAPTCHA and the TRUST_PROXY parser.
 
 
 ## Login and session fixes

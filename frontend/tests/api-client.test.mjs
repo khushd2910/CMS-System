@@ -1,8 +1,9 @@
 import { createServer } from "vite";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 const mem = () => { const m = new Map(); return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; };
 globalThis.window = { sessionStorage: mem(), localStorage: mem() };
-const vite = await createServer({ root: new URL("..", import.meta.url).pathname, server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
+const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
 const { request, onSessionEnded } = await vite.ssrLoadModule("/src/services/apiClient.js");
 const { tokenStorage } = await vite.ssrLoadModule("/src/services/tokenStorage.js");
 let ended = 0;

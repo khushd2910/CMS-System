@@ -15,6 +15,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
 const connectDB = require("../config/db");
+const emailService = require("../utils/email");
+emailService.sendGrievanceStatusEmail = async () => ({ accepted: [] });
 const { app } = require("../index");
 const { User, Department, Grievance, StatusHistory, Notification } = require("../models");
 

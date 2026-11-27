@@ -1,9 +1,13 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { User, PendingRegistration, AuditLog } = require("../models");
+const { User, PendingRegistration, AdminLoginChallenge, AuditLog } = require("../models");
 const { getSecret } = require("../middleware/auth");
-const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/email");
+const {
+    sendPasswordResetEmail,
+    sendVerificationEmail,
+    sendAdminLoginOtpEmail,
+} = require("../utils/email");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
 const { getLockStatus } = require("../utils/login-throttle");
 const { recordAudit, normalizeIdentifier, clientIp } = require("../utils/audit");
@@ -586,6 +590,25 @@ const recordBlocked = async (req, role, identifier, scope) => {
     }
 };
 
+const ADMIN_OTP_TTL_MS = 5 * 60 * 1000;
+const ADMIN_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+const ADMIN_OTP_MAX_ATTEMPTS = 5;
+const ADMIN_OTP_MAX_RESENDS = 3;
+
+const createAdminOtp = () => {
+    const code = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
+    return {
+        code,
+        hash: crypto.createHash("sha256").update(code).digest("hex"),
+    };
+};
+
+const sendAdminOtp = async (user, code) => sendAdminLoginOtpEmail({
+    email: user.email,
+    name: user.name,
+    code,
+});
+
 // One login handler for every staff role (admin, manager). Each role gets its own endpoint, its own
 // lock-out counters and its own generic error text, and an account of any other role is rejected
 // with exactly the same answer as a wrong password.
@@ -623,13 +646,245 @@ const createStaffLogin = (role, invalidMessage) => async (req, res, next) => {
 
         // Same answer for "no such account", "wrong password" and "wrong role":
         // the page must not reveal which accounts exist or what role an account has.
-        if (!user || !passwordOk || user.role !== role) {
+        if (!user || !passwordOk || user.role !== role || user.isActive === false) {
             await recordAudit(req, { event: "staff_login", outcome: "failure", reason: "invalid_credentials", role, identifier });
             return res.status(401).json({ message: invalidMessage, code: "INVALID_CREDENTIALS" });
         }
 
+        if (role === "admin") {
+            if (!smtpConfigured()) {
+                await recordAudit(req, { event: "staff_login", outcome: "failure", reason: "otp_email_unavailable", role, identifier, user });
+                return res.status(503).json({
+                    message: "Administrator verification email is unavailable. Please try again later.",
+                    code: "OTP_EMAIL_UNAVAILABLE",
+                });
+            }
+            if (!resendAllowed(`${clientIp(req)}|admin-login|${identifier}`)) {
+                const retryAfterSeconds = RESEND_WINDOW_MS / 1000;
+                res.set("Retry-After", String(retryAfterSeconds));
+                await recordAudit(req, { event: "staff_login", outcome: "blocked", reason: "admin_otp_rate_limited", role, identifier });
+                return res.status(429).json({
+                    message: "Too many verification requests. Please try again later.",
+                    code: "ADMIN_OTP_RATE_LIMITED",
+                    retryAfterSeconds,
+                });
+            }
+
+            const otp = createAdminOtp();
+            const now = new Date();
+            const challenge = await AdminLoginChallenge.create({
+                userId: user._id,
+                tokenVersion: user.tokenVersion || 0,
+                codeHash: otp.hash,
+                expiresAt: new Date(now.getTime() + ADMIN_OTP_TTL_MS),
+                attempts: 0,
+                resendCount: 0,
+                resendAfter: new Date(now.getTime() + ADMIN_OTP_RESEND_COOLDOWN_MS),
+            });
+            try {
+                await sendAdminOtp(user, otp.code);
+            } catch (error) {
+                await AdminLoginChallenge.deleteOne({ _id: challenge._id });
+                console.error(`Admin login OTP delivery failed (${error.code || "SMTP_ERROR"}).`);
+                await recordAudit(req, { event: "staff_login", outcome: "failure", reason: "otp_delivery_failed", role, identifier, user });
+                return res.status(503).json({
+                    message: "We could not send the administrator verification code. Please try again.",
+                    code: "OTP_DELIVERY_FAILED",
+                });
+            }
+            return res.status(202).json({
+                requiresOtp: true,
+                challengeId: challenge._id,
+                expiresInSeconds: ADMIN_OTP_TTL_MS / 1000,
+                resendAfterSeconds: ADMIN_OTP_RESEND_COOLDOWN_MS / 1000,
+            });
+        }
+
         await recordAudit(req, { event: "staff_login", outcome: "success", role, identifier, user });
         return res.json(authResponse(user));
+    } catch (error) {
+        return next(error);
+    }
+};
+
+const verifyAdminLoginOtp = async (req, res, next) => {
+    try {
+        const challengeId = typeof req.body?.challengeId === "string" ? req.body.challengeId.trim() : "";
+        const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+        const invalidResponse = {
+            message: "The verification code is invalid, expired, or has reached its attempt limit.",
+            code: "ADMIN_OTP_INVALID",
+        };
+        if (!/^[a-f\d]{24}$/i.test(challengeId) || !/^\d{6}$/.test(code)) {
+            return res.status(400).json(invalidResponse);
+        }
+
+        const challenge = await AdminLoginChallenge.findOne({
+            _id: challengeId,
+            expiresAt: { $gt: new Date() },
+        }).select("+codeHash +attempts");
+        if (
+            !challenge ||
+            !/^[a-f\d]{64}$/i.test(challenge.codeHash || "") ||
+            challenge.attempts >= ADMIN_OTP_MAX_ATTEMPTS
+        ) {
+            return res.status(400).json(invalidResponse);
+        }
+
+        const user = await User.findOne({
+            _id: challenge.userId,
+            role: "admin",
+            isActive: { $ne: false },
+        });
+        if (!user || (user.tokenVersion || 0) !== challenge.tokenVersion) {
+            await AdminLoginChallenge.deleteOne({ _id: challenge._id });
+            return res.status(400).json(invalidResponse);
+        }
+
+        const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+        const sameCode = crypto.timingSafeEqual(Buffer.from(codeHash, "hex"), Buffer.from(challenge.codeHash, "hex"));
+        const claim = {
+            _id: challenge._id,
+            codeHash: challenge.codeHash,
+            expiresAt: { $gt: new Date() },
+            attempts: { $lt: ADMIN_OTP_MAX_ATTEMPTS },
+        };
+        if (!sameCode) {
+            await AdminLoginChallenge.updateOne(claim, { $inc: { attempts: 1 } });
+            await recordAudit(req, {
+                event: "staff_login",
+                outcome: "failure",
+                reason: "otp_invalid",
+                role: "admin",
+                identifier: user.email,
+                user,
+            });
+            return res.status(400).json(invalidResponse);
+        }
+
+        const consumed = await AdminLoginChallenge.findOneAndDelete(claim);
+        if (!consumed) return res.status(400).json(invalidResponse);
+
+        const currentUser = await User.findOne({
+            _id: user._id,
+            role: "admin",
+            isActive: { $ne: false },
+        });
+        if (!currentUser || (currentUser.tokenVersion || 0) !== challenge.tokenVersion) {
+            return res.status(400).json(invalidResponse);
+        }
+        await recordAudit(req, {
+            event: "staff_login",
+            outcome: "success",
+            role: "admin",
+            identifier: currentUser.email,
+            user: currentUser,
+        });
+        return res.json(authResponse(currentUser));
+    } catch (error) {
+        return next(error);
+    }
+};
+
+const resendAdminLoginOtp = async (req, res, next) => {
+    try {
+        const challengeId = typeof req.body?.challengeId === "string" ? req.body.challengeId.trim() : "";
+        const invalidResponse = {
+            message: "The verification request is invalid or has expired.",
+            code: "ADMIN_OTP_INVALID",
+        };
+        if (!/^[a-f\d]{24}$/i.test(challengeId)) return res.status(400).json(invalidResponse);
+        if (!smtpConfigured()) {
+            return res.status(503).json({
+                message: "Administrator verification email is unavailable. Please try again later.",
+                code: "OTP_EMAIL_UNAVAILABLE",
+            });
+        }
+        if (!resendAllowed(`${clientIp(req)}|admin-otp-resend`)) {
+            const retryAfterSeconds = RESEND_WINDOW_MS / 1000;
+            res.set("Retry-After", String(retryAfterSeconds));
+            return res.status(429).json({
+                message: "Too many verification requests. Please try again later.",
+                code: "ADMIN_OTP_RATE_LIMITED",
+                retryAfterSeconds,
+            });
+        }
+
+        const now = new Date();
+        const challenge = await AdminLoginChallenge.findOne({
+            _id: challengeId,
+            expiresAt: { $gt: now },
+        }).select("+resendAfter +resendCount");
+        if (!challenge) return res.status(400).json(invalidResponse);
+        if (challenge.resendCount >= ADMIN_OTP_MAX_RESENDS) {
+            return res.status(429).json({
+                message: "The verification code resend limit has been reached. Start a new login attempt.",
+                code: "ADMIN_OTP_RESEND_LIMIT",
+            });
+        }
+        if (challenge.resendAfter > now) {
+            const retryAfterSeconds = Math.ceil((challenge.resendAfter.getTime() - now.getTime()) / 1000);
+            res.set("Retry-After", String(retryAfterSeconds));
+            return res.status(429).json({
+                message: "Please wait before requesting another verification code.",
+                code: "ADMIN_OTP_COOLDOWN",
+                retryAfterSeconds,
+            });
+        }
+
+        const user = await User.findOne({
+            _id: challenge.userId,
+            role: "admin",
+            isActive: { $ne: false },
+        });
+        if (!user || (user.tokenVersion || 0) !== challenge.tokenVersion) {
+            await AdminLoginChallenge.deleteOne({ _id: challenge._id });
+            return res.status(400).json(invalidResponse);
+        }
+
+        const otp = createAdminOtp();
+        const expiresAt = new Date(now.getTime() + ADMIN_OTP_TTL_MS);
+        const resendAfter = new Date(now.getTime() + ADMIN_OTP_RESEND_COOLDOWN_MS);
+        const refreshed = await AdminLoginChallenge.findOneAndUpdate(
+            {
+                _id: challenge._id,
+                expiresAt: { $gt: now },
+                resendAfter: { $lte: now },
+                resendCount: { $lt: ADMIN_OTP_MAX_RESENDS },
+            },
+            {
+                $set: {
+                    codeHash: otp.hash,
+                    expiresAt,
+                    resendAfter,
+                    attempts: 0,
+                },
+                $inc: { resendCount: 1 },
+            },
+            { returnDocument: "after" }
+        );
+        if (!refreshed) {
+            return res.status(429).json({
+                message: "Please wait before requesting another verification code.",
+                code: "ADMIN_OTP_COOLDOWN",
+                retryAfterSeconds: ADMIN_OTP_RESEND_COOLDOWN_MS / 1000,
+            });
+        }
+
+        try {
+            await sendAdminOtp(user, otp.code);
+        } catch (error) {
+            console.error(`Admin login OTP delivery failed (${error.code || "SMTP_ERROR"}).`);
+            return res.status(503).json({
+                message: "We could not send the administrator verification code. Please try again.",
+                code: "OTP_DELIVERY_FAILED",
+            });
+        }
+        return res.json({
+            message: "A new verification code has been sent.",
+            expiresInSeconds: ADMIN_OTP_TTL_MS / 1000,
+            resendAfterSeconds: ADMIN_OTP_RESEND_COOLDOWN_MS / 1000,
+        });
     } catch (error) {
         return next(error);
     }
@@ -640,5 +895,5 @@ const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password
 
 module.exports = {
     register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
-    verifyEmailCode, resendVerification,
+    verifyEmailCode, resendVerification, verifyAdminLoginOtp, resendAdminLoginOtp,
 };

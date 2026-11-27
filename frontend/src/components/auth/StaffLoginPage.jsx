@@ -94,12 +94,24 @@ export default function StaffLoginPage({ config }) {
 
     setSubmitting(true);
     try {
-      await signIn({
+      const result = await signIn({
         email: form.identifier.trim(),
         password: form.password,
         captchaId: captcha.id,
         captchaAnswer: form.captchaAnswer.trim(),
       });
+      if (config.role === "admin" && result?.requiresOtp) {
+        navigate("/admin/verify-otp", {
+          replace: true,
+          state: {
+            challengeId: result.challengeId,
+            email: form.identifier.trim().toLowerCase(),
+            resendAfterSeconds: result.resendAfterSeconds,
+            returnTo: afterLogin,
+          },
+        });
+        return;
+      }
       navigate(afterLogin, { replace: true });
     } catch (error) {
       setFormError(describeLoginError(error, config.invalidMessage));

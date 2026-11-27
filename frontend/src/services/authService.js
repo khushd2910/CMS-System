@@ -26,6 +26,12 @@ export const authService = {
   adminLogin: ({ email, password, captchaId, captchaAnswer }) =>
     request("/auth/admin-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),
 
+  verifyAdminLoginOtp: ({ challengeId, code }) =>
+    request("/auth/admin-login/verify-otp", { method: "POST", body: { challengeId, code } }),
+
+  resendAdminLoginOtp: ({ challengeId }) =>
+    request("/auth/admin-login/resend-otp", { method: "POST", body: { challengeId } }),
+
   // -> same shape as login. Department managers only; needs a valid CAPTCHA answer.
   managerLogin: ({ email, password, captchaId, captchaAnswer }) =>
     request("/auth/manager-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),

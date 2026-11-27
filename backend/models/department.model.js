@@ -8,7 +8,23 @@ const departmentSchema = new mongoose.Schema(
             unique: true,
             trim: true,
         },
+        code: {
+            type: String,
+            trim: true,
+            uppercase: true,
+            unique: true,
+            sparse: true,
+        },
         description: {
+            type: String,
+            trim: true,
+        },
+        contactEmail: {
+            type: String,
+            trim: true,
+            lowercase: true,
+        },
+        contactNumber: {
             type: String,
             trim: true,
         },
