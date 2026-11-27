@@ -65,17 +65,21 @@ const authResponse = (user) => ({
 const RESEND_WINDOW_MS = 15 * 60 * 1000;
 const RESEND_MAX = 5;
 const resendRequests = new Map();
-const resendAllowed = (key) => {
+// Counts one request for this key. Returns 0 when the request is allowed, otherwise the number of
+// seconds until the window ends (so the client can tell the person how long to wait).
+const resendWaitSeconds = (key) => {
     const now = Date.now();
     const entry = resendRequests.get(key);
     if (!entry || now - entry.first > RESEND_WINDOW_MS) {
         resendRequests.set(key, { count: 1, first: now });
         if (resendRequests.size > 10000) resendRequests.delete(resendRequests.keys().next().value);
-        return true;
+        return 0;
     }
     entry.count += 1;
-    return entry.count <= RESEND_MAX;
+    if (entry.count <= RESEND_MAX) return 0;
+    return Math.max(1, Math.ceil((entry.first + RESEND_WINDOW_MS - now) / 1000));
 };
+const resendAllowed = (key) => resendWaitSeconds(key) === 0;
 
 const register = async (req, res, next) => {
     try {
@@ -447,7 +451,19 @@ const resendVerification = async (req, res, next) => {
         const raw = req.body?.identifier;
         const identifier = typeof raw === "string" ? raw.trim() : "";
         const query = identifier ? identifierQuery(identifier) : null;
-        if (!query || !resendAllowed(`${clientIp(req)}|${identifier.toLowerCase()}`)) return res.json(generic);
+        if (!query) return res.json(generic);
+        // The limit is counted per IP + email text whether or not an account exists, so saying "too many
+        // requests" reveals nothing about accounts. It stops the page from claiming a code was sent when
+        // it was not.
+        const waitSeconds = resendWaitSeconds(`${clientIp(req)}|${identifier.toLowerCase()}`);
+        if (waitSeconds > 0) {
+            res.set("Retry-After", String(waitSeconds));
+            return res.status(429).json({
+                message: "Too many verification requests. Please try again later.",
+                code: "EMAIL_RATE_LIMITED",
+                retryAfterSeconds: waitSeconds,
+            });
+        }
 
         const verification = newVerificationCode();
         const pending = await PendingRegistration.findOneAndUpdate(

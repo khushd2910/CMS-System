@@ -9,7 +9,8 @@ import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
 import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
-import { authService } from "../services/authService";
+import { formatWait } from "../hooks/useCooldown";
+import { useResendCode } from "../hooks/useResendCode";
 import { validateCaptchaAnswer, validateIdentifier, validatePassword } from "../utils/validators";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Citizen Login" }];
@@ -50,7 +51,7 @@ export default function CitizenLogin() {
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
-  const [resendState, setResendState] = useState("idle"); // idle | sending | sent | failed
+  const resend = useResendCode();
 
   const identifierRef = useRef(null);
   const passwordRef = useRef(null);
@@ -59,6 +60,8 @@ export default function CitizenLogin() {
   // Already signed in? Go to the landing page for THIS person's role (a citizen, admin or manager
   // each has their own), not always the citizen area.
   if (status === "authenticated") return <Navigate to={homePathForRole(user?.role)} replace />;
+
+  const resendWait = resend.secondsLeftFor(form.identifier);
 
   const validators = {
     identifier: validateIdentifier,
@@ -81,18 +84,12 @@ export default function CitizenLogin() {
     setErrors(NO_ERRORS);
     setFormError("");
     setNeedsVerification(false);
-    setResendState("idle");
+    resend.reset();
     identifierRef.current?.focus();
   }
 
-  async function handleResend() {
-    setResendState("sending");
-    try {
-      await authService.resendVerification({ identifier: form.identifier.trim() });
-      setResendState("sent");
-    } catch {
-      setResendState("failed");
-    }
+  function handleResend() {
+    return resend.send(form.identifier);
   }
 
   async function handleSubmit(event) {
@@ -101,7 +98,7 @@ export default function CitizenLogin() {
 
     setFormError("");
     setNeedsVerification(false);
-    setResendState("idle");
+    resend.reset();
 
     const nextErrors = {
       identifier: validateIdentifier(form.identifier),
@@ -153,17 +150,15 @@ export default function CitizenLogin() {
                 <Button
                   type="button"
                   variant="secondary"
-                  loading={resendState === "sending"}
+                  loading={resend.sending}
                   loadingText="Sending…"
+                  disabled={resendWait > 0}
                   onClick={handleResend}
                 >
-                  Resend email code
+                  {resendWait > 0 ? `Resend in ${formatWait(resendWait)}` : "Resend email code"}
                 </Button>
-                {resendState === "sent" && (
-                  <p role="status">If this account is waiting for verification, a new email code has been sent.</p>
-                )}
-                {resendState === "failed" && (
-                  <p role="alert">Could not send the email code. Please try again in a few minutes.</p>
+                {resend.message && (
+                  <p role={resend.state === "sent" ? "status" : "alert"}>{resend.message}</p>
                 )}
                 <Link
                   className="link"

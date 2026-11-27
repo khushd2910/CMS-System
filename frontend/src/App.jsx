@@ -1,6 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import CitizenLogin from "./pages/CitizenLogin";
 import CitizenRegister from "./pages/CitizenRegister";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import ManagerLogin from "./pages/ManagerLogin";
@@ -55,8 +57,8 @@ export default function App() {
 
       {/* Later modules: kept as placeholders so every link works. */}
       <Route path="/register" element={<CitizenRegister />} />
-      <Route path="/forgot-password" element={<ComingSoon title="Forgot Password" />} />
-      <Route path="/reset-password/:token" element={<ComingSoon title="Reset Password" />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:token" element={<ResetPassword />} />
       <Route path="/about" element={<ComingSoon title="About Us" />} />
       <Route path="/services" element={<ComingSoon title="Services" />} />
       <Route path="/policies" element={<ComingSoon title="Policies" />} />

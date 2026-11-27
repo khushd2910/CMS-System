@@ -34,6 +34,14 @@ export const authService = {
   managerLogin: ({ email, password, captchaId, captchaAnswer }) =>
     request("/auth/manager-login", { method: "POST", body: { email, password, captchaId, captchaAnswer } }),
 
+  // -> { message }. The answer is the same whether or not the account exists.
+  forgotPassword: ({ email }) =>
+    request("/auth/forgot-password", { method: "POST", body: { email } }),
+
+  // -> { message }. Status 400 with "token" in the message: the link is invalid or expired.
+  resetPassword: ({ token, password }) =>
+    request(`/auth/reset-password/${encodeURIComponent(token)}`, { method: "POST", body: { password } }),
+
   // -> { user }   (needs the Bearer token)
   me: (options) => request("/auth/me", { auth: true, ...options }),
 

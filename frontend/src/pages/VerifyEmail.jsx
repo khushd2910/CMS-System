@@ -8,6 +8,8 @@ import Alert from "../components/ui/Alert";
 import { CITIZEN_HOME_PATH } from "../config/auth.config";
 import { useAuth } from "../context/AuthContext";
 import { authService } from "../services/authService";
+import { formatWait } from "../hooks/useCooldown";
+import { useResendCode } from "../hooks/useResendCode";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Verify Email" }];
 
@@ -21,7 +23,7 @@ export default function VerifyEmail() {
   const [status, setStatus] = useState(token ? "verifying-link" : "ready");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [resendState, setResendState] = useState("idle");
+  const resend = useResendCode();
 
   useEffect(() => {
     if (!token) return undefined;
@@ -75,13 +77,7 @@ export default function VerifyEmail() {
       return;
     }
     setFormError("");
-    setResendState("sending");
-    try {
-      await authService.resendVerification({ identifier: normalizedEmail });
-      setResendState("sent");
-    } catch {
-      setResendState("failed");
-    }
+    await resend.send(normalizedEmail);
   }
 
   if (token) {
@@ -105,6 +101,8 @@ export default function VerifyEmail() {
     );
   }
 
+  const resendWait = resend.secondsLeftFor(email);
+
   return (
     <PortalLayout title="Verify Email" breadcrumb={BREADCRUMB}>
       <section className="card register-success" aria-labelledby="verify-heading" aria-live="polite">
@@ -121,7 +119,10 @@ export default function VerifyEmail() {
             autoComplete="email"
             required
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              resend.reset();
+            }}
             readOnly={submitting}
           />
           <TextField
@@ -141,15 +142,22 @@ export default function VerifyEmail() {
             <Button
               type="button"
               variant="secondary"
-              loading={resendState === "sending"}
+              loading={resend.sending}
               loadingText="Sending…"
+              disabled={resendWait > 0}
               onClick={handleResend}
             >
-              Resend Email Code
+              {resendWait > 0 ? `Resend in ${formatWait(resendWait)}` : "Resend Email Code"}
             </Button>
           </div>
-          {resendState === "sent" && <p role="status">If this registration is waiting for verification, a new email code has been sent.</p>}
-          {resendState === "failed" && <p role="alert">Could not send the email code. Please try again later.</p>}
+          {resend.message && (
+            <p role={resend.state === "sent" ? "status" : "alert"}>{resend.message}</p>
+          )}
+          <p className="register-note">
+            Registered more than once with this email? The details from your first registration, including its
+            password, stay in use. After you verify, use <Link className="link" to="/forgot-password">Forgot Password</Link>{" "}
+            if you need a new one.
+          </p>
         </form>
       </section>
     </PortalLayout>

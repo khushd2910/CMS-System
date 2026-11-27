@@ -211,6 +211,15 @@ const check = async (name, fn) => {
         assert.equal(await PendingRegistration.exists({ email: "no-smtp@t.in" }), null);
         assert.equal(await User.exists({ email: "no-smtp@t.in" }), null);
     });
+    await check("resend verification says so when the request limit is reached", async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+            assert.equal((await call("POST", "/api/auth/resend-verification", { identifier: "limit@t.in" })).status, 200);
+        }
+        const limited = await call("POST", "/api/auth/resend-verification", { identifier: "limit@t.in" });
+        assert.equal(limited.status, 429);
+        assert.equal(limited.body.code, "EMAIL_RATE_LIMITED");
+        assert.ok(limited.body.retryAfterSeconds > 0);
+    });
     await check("legacy email verification links remain accepted", async () => {
         const crypto = require("node:crypto");
         const token = "t".repeat(64);

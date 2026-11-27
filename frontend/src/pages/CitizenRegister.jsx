@@ -71,6 +71,9 @@ function describeRegisterError(error) {
     return "An account with this email address already exists. Try signing in instead.";
   }
   if (error.status === 409) return "An account with these details already exists. Try signing in instead.";
+  if (error.status === 429) {
+    return "Too many verification emails have been requested for this address. Please wait a few minutes. If a code was already sent, use it on the verification page.";
+  }
   if (error.status === 503 && error.serverCode === "EMAIL_DELIVERY_FAILED") {
     return "Your account has not been created yet. A verification email could not be sent; continue to request a new code.";
   }
@@ -200,6 +203,13 @@ export default function CitizenRegister() {
                 : "A verification code has been emailed to you. Your account will be created after you verify your email address."
               : "Your citizen account has been created and you are signed in. You can now submit grievances and track their progress."}
           </p>
+          {needsVerification && (
+            <p className="register-note">
+              Already started registering with this email? Your first registration’s details, including its
+              password, stay in use. After verifying, use <Link className="link" to="/forgot-password">Forgot Password</Link>{" "}
+              if you need a new one.
+            </p>
+          )}
           <div className="login-form__actions">
             {needsVerification ? (
               <Button

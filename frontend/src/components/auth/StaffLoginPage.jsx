@@ -214,7 +214,7 @@ export default function StaffLoginPage({ config }) {
             />
 
             <p className="admin-form__forgot">
-              <Link className="admin-form__forgot-link" to="/forgot-password">
+              <Link className="admin-form__forgot-link" to="/forgot-password" state={{ loginPath: `${config.pathPrefix}/login` }}>
                 Forgot Password?
               </Link>
             </p>
