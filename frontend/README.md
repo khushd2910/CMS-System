@@ -23,10 +23,10 @@ so no backend URL is hard-coded and CORS is not an issue.
 ```
 src/
   main.jsx, App.jsx        entry point and routes
-  config/auth.config.js    switches: mobile login on/off, allowed roles, post-login page
+  config/auth.config.js    allowed roles and post-login page
   services/                apiClient (fetch wrapper), authService (one function per endpoint), tokenStorage
   context/AuthContext.jsx  who is signed in (login / logout / restore session)
-  utils/validators.js      email + mobile + password validation
+  utils/validators.js      email + password validation
   components/ui/           TextField, PasswordField, Button, Alert
   components/layout/       PortalHeader, NavBar, Breadcrumb, PortalFooter, PortalLayout, PortalEmblem
   components/ProtectedRoute.jsx
@@ -37,16 +37,12 @@ src/
 
 ## Citizen Registration notes
 
-- Route: `/register`. Posts to `POST /api/auth/register`; the backend signs the citizen in unless email
-  verification is enabled, in which case the page asks the citizen to verify before signing in.
-- Registration requires name, email, mobile, address, PIN code, and acceptance of the Terms and Conditions and
+- Route: `/register`. Posts to `POST /api/auth/register`; the user remains a pending registration until the
+  six-digit email verification code is accepted. Only then is a citizen account created and signed in.
+- Registration requires name, email, address, PIN code, and acceptance of the Terms and Conditions and
   Privacy Policy. The backend stores the acceptance and its timestamp. Passwords require at least 8 characters,
   a letter, a number, and a symbol. English is the only supported site language.
 - The location dropdown has all Gujarat districts and talukas; other states are still sample data.
-- Mobile OTP is **not implemented**: the backend has no OTP endpoints or SMS provider. `SUPPORTS_MOBILE_OTP` in
-  `config/auth.config.js` is `false`. To add it you need an SMS/OTP provider (e.g. MSG91, Twilio, or an
-  NIC/government gateway), endpoints to send and verify an OTP (hashed, short expiry, attempt limit, rate limit),
-  and a `mobileVerified` flag on the user.
 
 ## Admin Login notes
 
@@ -72,6 +68,6 @@ src/
 
 ## Citizen login / verification notes
 
-- Citizen login sends `{ identifier, password }` (email or mobile). Staff accounts are refused by the backend with the generic wrong-password answer.
+- Citizen login sends `{ identifier, password }` (email only). Staff accounts are refused by the backend with the generic wrong-password answer.
 - A signed-in person who opens `/login` or `/register` is sent to their own role's landing page (`homePathForRole`).
-- `/verify-email/:token` completes email verification; the login page offers "Resend verification email" when the backend says the email is unverified.
+- `/verify-email` verifies the email code and signs the citizen in after the account is created. `/verify-email/:token` remains for older email verification links.

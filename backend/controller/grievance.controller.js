@@ -24,7 +24,7 @@ const cleanText = (value) => (typeof value === "string" ? value.trim() : "");
 
 const withRelations = (query) =>
     query
-        .populate("citizenId", "name email mobileNo")
+        .populate("citizenId", "name email")
         .populate("departmentId", "name")
         .populate("requestedDepartmentId", "name");
 

@@ -11,13 +11,11 @@ import { useAuth } from "../context/AuthContext";
 import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
 import { LOCATIONS } from "../data/locations";
 import {
-  normalizeMobile,
   passwordStrength,
   validateConfirmPassword,
   validateDob,
   validateEmail,
   validateFullName,
-  validateMobile,
   validateNewPassword,
   validatePin,
   validateRequired,
@@ -37,7 +35,7 @@ const GENDERS = [
   { value: "prefer_not_to_say", text: "Prefer not to say" },
 ];
 const EMPTY_FORM = {
-  name: "", dob: "", gender: "", mobile: "", email: "",
+  name: "", dob: "", gender: "", email: "",
   password: "", confirm: "",
   state: "", district: "", city: "", village: "", address: "", landmark: "", pin: "",
   agree: false,
@@ -45,7 +43,7 @@ const EMPTY_FORM = {
 
 // Field order = order of focus when a submit fails.
 const FIELD_ORDER = [
-  "name", "dob", "mobile", "email", "password", "confirm",
+  "name", "dob", "email", "password", "confirm",
   "state", "district", "city", "address", "pin", "agree",
 ];
 
@@ -53,7 +51,6 @@ function validateField(name, form) {
   switch (name) {
     case "name": return validateFullName(form.name);
     case "dob": return validateDob(form.dob);
-    case "mobile": return validateMobile(form.mobile);
     case "email": return validateEmail(form.email);
     case "password": return validateNewPassword(form.password);
     case "confirm": return validateConfirmPassword(form.password, form.confirm);
@@ -70,15 +67,12 @@ function validateField(name, form) {
 function describeRegisterError(error) {
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
-  if (error.status === 409 && error.serverCode === "MOBILE_EXISTS") {
-    return "An account with this mobile number already exists. Try signing in instead.";
-  }
   if (error.status === 409 && error.serverCode === "EMAIL_EXISTS") {
     return "An account with this email address already exists. Try signing in instead.";
   }
   if (error.status === 409) return "An account with these details already exists. Try signing in instead.";
   if (error.status === 503 && error.serverCode === "EMAIL_DELIVERY_FAILED") {
-    return "Your account was created, but we could not send the code. Go to login, enter your password, and choose Resend verification code.";
+    return "Your account has not been created yet. A verification email could not be sent; continue to request a new code.";
   }
   if (error.status === 503) return "The email service is unavailable right now. Please try again later.";
   if (error.status === 400) return error.message;
@@ -95,6 +89,7 @@ export default function CitizenRegister() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [verificationDeliveryIssue, setVerificationDeliveryIssue] = useState(false);
   const firstFieldRef = useRef(null);
 
   const districts = useMemo(() => Object.keys(LOCATIONS[form.state] || {}), [form.state]);
@@ -160,7 +155,6 @@ export default function CitizenRegister() {
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        mobileNo: normalizeMobile(form.mobile),
         dateOfBirth: form.dob || undefined,
         gender: form.gender || undefined,
         termsAccepted: form.agree,
@@ -177,6 +171,13 @@ export default function CitizenRegister() {
       setNeedsVerification(Boolean(result?.requiresVerification));
       setDone(true);
     } catch (error) {
+      if (error.serverCode === "EMAIL_DELIVERY_FAILED") {
+        setNeedsVerification(true);
+        setVerificationDeliveryIssue(true);
+        setDone(true);
+        setSubmitting(false);
+        return;
+      }
       setFormError(describeRegisterError(error));
       setForm((current) => ({ ...current, password: "", confirm: "" })); // never keep passwords after a failure
       setSubmitting(false);
@@ -190,20 +191,26 @@ export default function CitizenRegister() {
         <section className="card register-success" aria-labelledby="success-heading">
           <CircleCheck className="register-success__icon" size={44} aria-hidden="true" />
           <h1 className="card__title" id="success-heading" tabIndex={-1} ref={(node) => node?.focus()}>
-            {needsVerification ? "Verify Your Email" : "Registration Successful"}
+            {needsVerification ? "Verify Your Account" : "Registration Successful"}
           </h1>
           <p className="card__subtitle" role="status">
             {needsVerification
-              ? `Your account has been created. Enter the six-digit verification code sent to ${form.email.trim()} to activate your account.`
+              ? verificationDeliveryIssue
+                ? "Your account has not been created yet because the verification email could not be sent. Request a new code to continue."
+                : "A verification code has been emailed to you. Your account will be created after you verify your email address."
               : "Your citizen account has been created and you are signed in. You can now submit grievances and track their progress."}
           </p>
           <div className="login-form__actions">
             {needsVerification ? (
               <Button
                 type="button"
-                onClick={() => navigate("/verify-email", { state: { email: form.email.trim().toLowerCase() } })}
+                onClick={() => navigate("/verify-email", {
+                  state: {
+                    email: form.email.trim().toLowerCase(),
+                  },
+                })}
               >
-                Enter Verification Code
+                Verify Account
               </Button>
             ) : (
               <Button type="button" onClick={() => navigate(CITIZEN_HOME_PATH, { replace: true })}>
@@ -249,12 +256,6 @@ export default function CitizenRegister() {
                   <SelectField
                     id="gender" name="gender" label="Gender" placeholder="Select"
                     options={GENDERS} value={form.gender} onChange={handleChange} disabled={submitting}
-                  />
-                  <TextField
-                    id="mobile" name="mobile" label="Mobile Number" required type="tel" inputMode="tel"
-                    autoComplete="tel" placeholder="+91 98765 43210"
-                    hint="Indian mobile number, with or without +91."
-                    value={form.mobile} onChange={handleChange} readOnly={submitting} error={errors.mobile}
                   />
                   <TextField
                     id="email" name="email" label="Email Address" required type="email" inputMode="email"

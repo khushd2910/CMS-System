@@ -1,5 +1,6 @@
 module.exports = {
     User: require("./user.model"),
+    PendingRegistration: require("./pending-registration.model"),
     Department: require("./department.model"),
     Grievance: require("./grievance.model"),
     StatusHistory: require("./status-history.model"),

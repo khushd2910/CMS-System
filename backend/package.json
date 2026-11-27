@@ -23,6 +23,7 @@
     "test:citizen": "node tests/citizen-auth.test.js",
     "test:staff": "node tests/staff-login.test.js",
     "test:all": "npm run test:unit && npm test && npm run test:citizen && npm run test:staff",
+    "migrate:remove-mobile-data": "node scripts/remove-mobile-data.js",
     "test-email": "node scripts/test-email.js"
   },
   "dependencies": {

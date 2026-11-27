@@ -13,17 +13,7 @@ const userSchema = new mongoose.Schema(
             required: true,
             trim: true,
         },
-        // Unique (when present) so a citizen can sign in with their mobile number.
-        // Stored as 10 digits, e.g. "9876543210". If your database already holds duplicate mobile
-        // numbers, MongoDB cannot build this index until they are fixed.
-        mobileNo: {
-            type: String,
-            trim: true,
-            unique: true,
-            sparse: true,
-        },
-        // Email verification. Left unset for existing accounts (treated as verified);
-        // new citizen accounts may require a one-time email code.
+        // Existing accounts with this unset remain valid; new citizen registrations set it on creation.
         emailVerified: Boolean,
         emailVerificationTokenHash: {
             type: String,

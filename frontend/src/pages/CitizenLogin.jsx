@@ -157,23 +157,23 @@ export default function CitizenLogin() {
                   loadingText="Sending…"
                   onClick={handleResend}
                 >
-                  Resend verification code
+                  Resend email code
                 </Button>
                 {resendState === "sent" && (
-                  <p role="status">
-                    If this account is waiting for verification, a new code has been sent.{" "}
-                    <Link
-                      className="link"
-                      to="/verify-email"
-                      state={{ email: form.identifier.includes("@") ? form.identifier.trim().toLowerCase() : "" }}
-                    >
-                      Enter the code
-                    </Link>
-                  </p>
+                  <p role="status">If this account is waiting for verification, a new email code has been sent.</p>
                 )}
                 {resendState === "failed" && (
-                  <p role="alert">Could not send the code right now. Please try again in a few minutes.</p>
+                  <p role="alert">Could not send the email code. Please try again in a few minutes.</p>
                 )}
+                <Link
+                  className="link"
+                  to="/verify-email"
+                  state={{
+                    email: form.identifier.trim().toLowerCase(),
+                  }}
+                >
+                  Enter verification code
+                </Link>
               </div>
             )}
 
@@ -184,14 +184,14 @@ export default function CitizenLogin() {
                 id="identifier"
                 name="identifier"
                 ref={identifierRef}
-                label="Email Address or Registered Mobile Number"
+                label="Email Address"
                 required
-                type="text"
-                inputMode="text"
-                autoComplete="username"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
                 autoCapitalize="none"
                 spellCheck={false}
-                placeholder="Enter email or mobile number"
+                placeholder="Enter your email address"
                 value={form.identifier}
                 onChange={handleChange}
                 readOnly={submitting}

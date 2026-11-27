@@ -82,22 +82,19 @@ export function AuthProvider({ children }) {
     [staffSignIn]
   );
 
-  // The backend signs a new citizen in as part of registration, so we keep that
-  // behaviour: save the token for this browser session and mark the person as signed in.
+  // Registration remains pending until the email verification code is accepted.
   const register = useCallback(async (payload) => {
     const result = await authService.register(payload);
-    // With email verification switched on, the backend sends no token: the citizen must verify first.
-    if (result.requiresVerification) return { requiresVerification: true };
-    tokenStorage.set(result.token, false);
-    setUser(result.user);
-    setStatus("authenticated");
-    return { requiresVerification: false };
+    if (result.requiresVerification) {
+      return { requiresVerification: true };
+    }
+    throw new Error("Registration completed without email verification.");
   }, []);
 
-  const verifyEmail = useCallback(async (payload) => {
-    const { user: verifiedUser, token } = await authService.verifyEmail(payload);
-    if (!token || !CITIZEN_PORTAL_ROLES.includes(verifiedUser?.role)) {
-      const error = new Error("Email verification did not return a valid citizen session.");
+  const acceptVerifiedCitizenSession = useCallback(({ user: verifiedUser, token }) => {
+    if (!token) return;
+    if (!CITIZEN_PORTAL_ROLES.includes(verifiedUser?.role)) {
+      const error = new Error("Verification did not return a valid citizen session.");
       error.status = 500;
       throw error;
     }
@@ -105,8 +102,13 @@ export function AuthProvider({ children }) {
     tokenStorage.set(token, false);
     setUser(verifiedUser);
     setStatus("authenticated");
-    return verifiedUser;
   }, []);
+
+  const verifyEmail = useCallback(async (payload) => {
+    const result = await authService.verifyEmail(payload);
+    acceptVerifiedCitizenSession(result);
+    return result;
+  }, [acceptVerifiedCitizenSession]);
 
   const logout = useCallback(async () => {
     try {
@@ -119,8 +121,9 @@ export function AuthProvider({ children }) {
     setStatus("anonymous");
   }, []);
 
-  const value = useMemo(() => ({ user, status, login, adminLogin, managerLogin, register, verifyEmail, logout }),
-    [user, status, login, adminLogin, managerLogin, register, verifyEmail, logout]);
+  const value = useMemo(() => ({
+    user, status, login, adminLogin, managerLogin, register, verifyEmail, logout,
+  }), [user, status, login, adminLogin, managerLogin, register, verifyEmail, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

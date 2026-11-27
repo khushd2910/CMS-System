@@ -1,7 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { User, AuditLog } = require("../models");
+const { User, PendingRegistration, AuditLog } = require("../models");
 const { getSecret } = require("../middleware/auth");
 const { sendPasswordResetEmail, sendVerificationEmail } = require("../utils/email");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
@@ -13,7 +13,6 @@ const publicUser = (user) => ({
     id: user._id,
     role: user.role,
     name: user.name,
-    mobileNo: user.mobileNo,
     email: user.email,
     departmentId: user.departmentId,
 });
@@ -27,18 +26,18 @@ const createToken = (user) =>
 // takes as long to reject as a wrong password (no account-enumeration through timing).
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
 
-const requireEmailVerification = () => process.env.REQUIRE_EMAIL_VERIFICATION === "true";
 const smtpConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
-// Email = contains "@"; otherwise a 10-digit Indian mobile number. Returns a MongoDB filter, or null.
+// The citizen sign-in accepts email addresses only.
 const identifierQuery = (identifier) => {
-    if (identifier.includes("@")) return { email: identifier.toLowerCase() };
-    const mobile = normalizeMobile(identifier);
-    return /^[6-9]\d{9}$/.test(mobile) ? { mobileNo: mobile } : null;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)
+        ? { email: identifier.toLowerCase() }
+        : null;
 };
 
 const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
+const PENDING_REGISTRATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 const newVerificationCode = () => {
     const code = crypto.randomInt(0, 1000000).toString().padStart(6, "0");
@@ -55,15 +54,6 @@ const deliverVerification = ({ email, name, code }) =>
 const GENDERS = ["male", "female", "other", "prefer_not_to_say"];
 const clean = (value) => (typeof value === "string" ? value.trim() : "");
 
-// Normalises "+91 98765-43210" / "098765 43210" to 10 digits.
-const normalizeMobile = (value) => {
-    let digits = clean(value).replace(/[\s\-().]/g, "");
-    if (digits.startsWith("+91")) digits = digits.slice(3);
-    else if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
-    else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
-    return digits;
-};
-
 const authResponse = (user) => ({
     user: publicUser(user),
     token: createToken(user),
@@ -71,10 +61,26 @@ const authResponse = (user) => ({
     expiresIn: process.env.JWT_EXPIRES_IN || "1d",
 });
 
+// At most 5 registration/resend requests per IP + email every 15 minutes.
+const RESEND_WINDOW_MS = 15 * 60 * 1000;
+const RESEND_MAX = 5;
+const resendRequests = new Map();
+const resendAllowed = (key) => {
+    const now = Date.now();
+    const entry = resendRequests.get(key);
+    if (!entry || now - entry.first > RESEND_WINDOW_MS) {
+        resendRequests.set(key, { count: 1, first: now });
+        if (resendRequests.size > 10000) resendRequests.delete(resendRequests.keys().next().value);
+        return true;
+    }
+    entry.count += 1;
+    return entry.count <= RESEND_MAX;
+};
+
 const register = async (req, res, next) => {
     try {
         const {
-            name, mobileNo, email, password,
+            name, email, password,
             dateOfBirth, gender, address, termsAccepted,
         } = req.body || {};
         const normalizedName = clean(name);
@@ -96,10 +102,6 @@ const register = async (req, res, next) => {
             return res.status(400).json({ message: passwordError });
         }
 
-        const mobile = normalizeMobile(mobileNo);
-        if (!/^[6-9]\d{9}$/.test(mobile)) {
-            return res.status(400).json({ message: "A valid 10-digit Indian mobile number is required." });
-        }
         if (!address || typeof address !== "object" || Array.isArray(address)) {
             return res.status(400).json({ message: "Address is required." });
         }
@@ -131,12 +133,7 @@ const register = async (req, res, next) => {
             });
         }
 
-        const profile = {
-            mobileNo: mobile,
-            address: normalizedAddress,
-            termsAccepted: true,
-            termsAcceptedAt: new Date(),
-        };
+        const profile = { address: normalizedAddress, termsAccepted: true, termsAcceptedAt: new Date() };
         if (clean(dateOfBirth)) {
             const dob = new Date(dateOfBirth);
             if (Number.isNaN(dob.getTime()) || dob > new Date()) {
@@ -149,59 +146,79 @@ const register = async (req, res, next) => {
             profile.gender = gender;
         }
 
-        const duplicate = await User.findOne({
-            $or: [{ email: normalizedEmail }, ...(profile.mobileNo ? [{ mobileNo: profile.mobileNo }] : [])],
-        }).select("email");
-        if (duplicate) {
-            const sameEmail = duplicate.email === normalizedEmail;
+        if (await User.exists({ email: normalizedEmail })) {
             return res.status(409).json({
-                message: sameEmail
-                    ? "An account with this email address already exists."
-                    : "An account with this mobile number already exists.",
-                code: sameEmail ? "EMAIL_EXISTS" : "MOBILE_EXISTS",
+                message: "An account with this email address already exists.",
+                code: "EMAIL_EXISTS",
             });
         }
-
-        const mustVerify = requireEmailVerification();
-        if (mustVerify && !smtpConfigured()) {
+        if (!smtpConfigured()) {
             return res.status(503).json({
                 message: "Email service is not available. Please try again later.",
                 code: "EMAIL_UNAVAILABLE",
             });
         }
-        const verification = mustVerify ? newVerificationCode() : null;
-
-        const user = await User.create({
-            name: normalizedName,
-            email: normalizedEmail,
-            password: await bcrypt.hash(password, 12),
-            role: "citizen",
-            ...profile,
-            ...(verification && {
-                emailVerified: false,
-                emailVerificationTokenHash: verification.hash,
-                emailVerificationExpires: verification.expires,
-                emailVerificationAttempts: 0,
-            }),
-        });
-
-        if (verification) {
-            try {
-                await deliverVerification({ email: user.email, name: user.name, code: verification.code });
-            } catch (error) {
-                console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
-                return res.status(503).json({
-                    message: "We could not send your verification code. Please try again later.",
-                    code: "EMAIL_DELIVERY_FAILED",
-                });
-            }
-            return res.status(201).json({
-                message: "Registration successful. Enter the verification code sent to your email before signing in.",
-                requiresVerification: true,
-                user: publicUser(user),
+        if (!resendAllowed(`${clientIp(req)}|registration|${normalizedEmail}`)) {
+            return res.status(429).json({
+                message: "Too many verification requests. Please try again later.",
+                code: "EMAIL_RATE_LIMITED",
             });
         }
-        return res.status(201).json(authResponse(user));
+        const emailVerification = newVerificationCode();
+        const registrationDetails = {
+            email: normalizedEmail,
+            name: normalizedName,
+            password: await bcrypt.hash(password, 12),
+            ...profile,
+        };
+        if (clean(dateOfBirth)) registrationDetails.dateOfBirth = new Date(dateOfBirth);
+        if (clean(gender)) registrationDetails.gender = gender;
+        const update = {
+            $set: {
+                verificationCodeHash: emailVerification.hash,
+                verificationExpires: emailVerification.expires,
+                verificationAttempts: 0,
+                expiresAt: new Date(Date.now() + PENDING_REGISTRATION_TTL_MS),
+            },
+            $setOnInsert: registrationDetails,
+            $unset: { verifiedAt: "" },
+        };
+        let pending;
+        try {
+            pending = await PendingRegistration.findOneAndUpdate(
+                { email: normalizedEmail },
+                update,
+                { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
+            );
+        } catch (error) {
+            if (error.code !== 11000) throw error;
+            pending = await PendingRegistration.findOneAndUpdate(
+                { email: normalizedEmail },
+                update,
+                { returnDocument: "after", runValidators: true }
+            );
+            if (!pending) throw error;
+        }
+
+        try {
+            await deliverVerification({
+                email: pending.email,
+                name: pending.name,
+                code: emailVerification.code,
+            });
+        } catch (error) {
+            console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
+            return res.status(503).json({
+                message: "Registration is not complete because the verification email could not be sent. Request a new code to continue.",
+                code: "EMAIL_DELIVERY_FAILED",
+                requiresEmailVerification: true,
+            });
+        }
+        return res.status(202).json({
+            message: "Enter the code sent to your email to finish creating your account.",
+            requiresVerification: true,
+            requiresEmailVerification: true,
+        });
     } catch (error) {
         return next(error);
     }
@@ -209,13 +226,12 @@ const register = async (req, res, next) => {
 
 const login = async (req, res, next) => {
     try {
-        // "identifier" is an email address or a 10-digit mobile number. "email" is still accepted
-        // so older clients keep working.
+        // "email" remains accepted for clients predating the identifier field.
         const raw = req.body?.identifier ?? req.body?.email;
         const identifier = typeof raw === "string" ? raw.trim() : "";
         const { password, captchaId, captchaAnswer } = req.body || {};
         if (!identifier || typeof password !== "string" || !password) {
-            return res.status(400).json({ message: "Email or mobile number and password are required." });
+            return res.status(400).json({ message: "Email and password are required." });
         }
         if (!verifyCaptcha(captchaId, captchaAnswer)) {
             return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
@@ -223,11 +239,20 @@ const login = async (req, res, next) => {
 
         const query = identifierQuery(identifier);
         const user = query ? await User.findOne(query).select("+password") : null;
-        const passwordOk = await bcrypt.compare(password, user ? user.password : DUMMY_HASH);
+        const pending = !user && query
+            ? await PendingRegistration.findOne({ ...query, expiresAt: { $gt: new Date() } }).select("+password")
+            : null;
+        const passwordOk = await bcrypt.compare(password, user?.password || pending?.password || DUMMY_HASH);
 
         // This is the CITIZEN sign-in. Admin and manager accounts have their own endpoints (with CAPTCHA),
         // so here they get exactly the same answer as a wrong password: nothing reveals that the account
         // exists or what role it has.
+        if (pending && passwordOk) {
+            return res.status(403).json({
+                message: "Please verify your email address to finish creating your account.",
+                code: "EMAIL_NOT_VERIFIED",
+            });
+        }
         if (!user || !passwordOk || user.role !== "citizen") {
             return res.status(401).json({ message: "Invalid email or password.", code: "INVALID_CREDENTIALS" });
         }
@@ -277,6 +302,79 @@ const verifyEmailCode = async (req, res, next) => {
             return res.status(400).json(invalidResponse);
         }
 
+        const pending = await PendingRegistration.findOne({ email, expiresAt: { $gt: new Date() } })
+            .select("+password +verificationCodeHash +verificationExpires +verificationAttempts");
+        if (pending) {
+            const storedHash = pending.verificationCodeHash;
+            const attempts = Number.isInteger(pending.verificationAttempts) ? pending.verificationAttempts : 0;
+            const expires = pending.verificationExpires;
+            if (
+                !/^[a-f\d]{64}$/i.test(storedHash || "") ||
+                !(expires instanceof Date) ||
+                expires <= new Date() ||
+                attempts >= EMAIL_CODE_MAX_ATTEMPTS
+            ) {
+                return res.status(400).json(invalidResponse);
+            }
+
+            const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+            const sameCode = crypto.timingSafeEqual(Buffer.from(codeHash, "hex"), Buffer.from(storedHash, "hex"));
+            const attemptLimit = {
+                verificationAttempts: { $lt: EMAIL_CODE_MAX_ATTEMPTS },
+            };
+            const claim = {
+                _id: pending._id,
+                verificationCodeHash: storedHash,
+                verificationExpires: { $gt: new Date() },
+                expiresAt: { $gt: new Date() },
+                ...attemptLimit,
+            };
+            if (!sameCode) {
+                await PendingRegistration.updateOne(claim, { $inc: { verificationAttempts: 1 } });
+                return res.status(400).json(invalidResponse);
+            }
+
+            if (!pending.verifiedAt) {
+                const markedVerified = await PendingRegistration.findOneAndUpdate(
+                    { ...claim, verifiedAt: { $exists: false } },
+                    { $set: { verifiedAt: new Date() } },
+                    { returnDocument: "after" }
+                );
+                if (!markedVerified) {
+                    const latest = await PendingRegistration.findById(pending._id);
+                    if (!latest?.verifiedAt) return res.status(400).json(invalidResponse);
+                }
+            }
+
+            let user;
+            try {
+                user = await User.create({
+                    name: pending.name,
+                    email: pending.email,
+                    password: pending.password,
+                    role: "citizen",
+                    dateOfBirth: pending.dateOfBirth,
+                    gender: pending.gender,
+                    address: pending.address,
+                    termsAccepted: pending.termsAccepted,
+                    termsAcceptedAt: pending.termsAcceptedAt,
+                    emailVerified: true,
+                });
+            } catch (error) {
+                if (error.code === 11000) {
+                    await PendingRegistration.deleteOne({ _id: pending._id });
+                    return res.status(409).json({
+                        message: "An account with this email address already exists.",
+                        code: "EMAIL_EXISTS",
+                    });
+                }
+                throw error;
+            }
+            await PendingRegistration.deleteOne({ _id: pending._id });
+            return res.json(authResponse(user));
+        }
+
+        // Existing accounts created before verification was required may still finish their legacy flow.
         const user = await User.findOne({ email, role: "citizen", emailVerified: false })
             .select("+emailVerificationTokenHash +emailVerificationExpires +emailVerificationAttempts");
         const storedHash = user?.emailVerificationTokenHash;
@@ -335,29 +433,12 @@ const verifyEmailCode = async (req, res, next) => {
     }
 };
 
-// At most 5 resend requests per IP + account every 15 minutes (kept in memory: it only protects the
-// mailbox from being flooded, it does not guard a password).
-const RESEND_WINDOW_MS = 15 * 60 * 1000;
-const RESEND_MAX = 5;
-const resendRequests = new Map(); // key -> { count, first }
-const resendAllowed = (key) => {
-    const now = Date.now();
-    const entry = resendRequests.get(key);
-    if (!entry || now - entry.first > RESEND_WINDOW_MS) {
-        resendRequests.set(key, { count: 1, first: now });
-        if (resendRequests.size > 10000) resendRequests.delete(resendRequests.keys().next().value);
-        return true;
-    }
-    entry.count += 1;
-    return entry.count <= RESEND_MAX;
-};
-
 const resendVerification = async (req, res, next) => {
     const generic = {
         message: "If this account is waiting for email verification, a new code has been sent.",
     };
     try {
-        if (requireEmailVerification() && !smtpConfigured()) {
+        if (!smtpConfigured()) {
             return res.status(503).json({
                 message: "Email service is not available. Please try again later.",
                 code: "EMAIL_UNAVAILABLE",
@@ -368,22 +449,46 @@ const resendVerification = async (req, res, next) => {
         const query = identifier ? identifierQuery(identifier) : null;
         if (!query || !resendAllowed(`${clientIp(req)}|${identifier.toLowerCase()}`)) return res.json(generic);
 
-        const user = await User.findOne(query)
-            .select("+emailVerificationTokenHash +emailVerificationExpires +emailVerificationAttempts");
-        if (user && user.role === "citizen" && user.emailVerified === false && requireEmailVerification()) {
-            const verification = newVerificationCode();
-            user.emailVerificationTokenHash = verification.hash;
-            user.emailVerificationExpires = verification.expires;
-            user.emailVerificationAttempts = 0;
-            await user.save();
+        const verification = newVerificationCode();
+        const pending = await PendingRegistration.findOneAndUpdate(
+            { ...query, expiresAt: { $gt: new Date() } },
+            {
+                $set: {
+                    verificationCodeHash: verification.hash,
+                    verificationExpires: verification.expires,
+                    verificationAttempts: 0,
+                },
+                $unset: { verifiedAt: "" },
+            },
+            { returnDocument: "after" }
+        );
+        if (pending) {
             try {
-                await deliverVerification({ email: user.email, name: user.name, code: verification.code });
+                await deliverVerification({ email: pending.email, name: pending.name, code: verification.code });
             } catch (error) {
                 console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
                 return res.status(503).json({
                     message: "We could not send your verification code. Please try again later.",
                     code: "EMAIL_DELIVERY_FAILED",
                 });
+            }
+        } else {
+            const user = await User.findOne(query)
+                .select("+emailVerificationTokenHash +emailVerificationExpires +emailVerificationAttempts");
+            if (user && user.role === "citizen" && user.emailVerified === false) {
+                user.emailVerificationTokenHash = verification.hash;
+                user.emailVerificationExpires = verification.expires;
+                user.emailVerificationAttempts = 0;
+                await user.save();
+                try {
+                    await deliverVerification({ email: user.email, name: user.name, code: verification.code });
+                } catch (error) {
+                    console.error(`Verification email delivery failed (${error.code || "SMTP_ERROR"}).`);
+                    return res.status(503).json({
+                        message: "We could not send your verification code. Please try again later.",
+                        code: "EMAIL_DELIVERY_FAILED",
+                    });
+                }
             }
         }
         return res.json(generic); // same answer whether or not the account exists

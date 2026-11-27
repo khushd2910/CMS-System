@@ -8,7 +8,6 @@ const publicUser = (user) => ({
     id: user._id,
     role: user.role,
     name: user.name,
-    mobileNo: user.mobileNo,
     email: user.email,
     departmentId: user.departmentId,
     createdAt: user.createdAt,
@@ -47,7 +46,7 @@ const listUsers = async (req, res, next) => {
 
 const createUser = async (req, res, next) => {
     try {
-        const { name, mobileNo, email, password, role, departmentId } = req.body || {};
+        const { name, email, password, role, departmentId } = req.body || {};
         const normalizedName = typeof name === "string" ? name.trim() : "";
         const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
         if (!normalizedName || !normalizedEmail || typeof password !== "string") {
@@ -69,8 +68,6 @@ const createUser = async (req, res, next) => {
 
         const user = await User.create({
             name: normalizedName,
-            // An empty string would clash with the unique mobile index, so it is stored as "no number".
-            mobileNo: typeof mobileNo === "string" && mobileNo.trim() ? mobileNo.trim() : undefined,
             email: normalizedEmail,
             password: await bcrypt.hash(password, 12),
             role,
@@ -102,9 +99,6 @@ const updateUser = async (req, res, next) => {
             user.role = updates.role;
         }
         if (updates.name !== undefined) user.name = updates.name;
-        if (updates.mobileNo !== undefined) {
-            user.mobileNo = typeof updates.mobileNo === "string" && updates.mobileNo.trim() ? updates.mobileNo.trim() : undefined;
-        }
         if (updates.departmentId !== undefined) {
             if (updates.departmentId && !(await Department.exists({ _id: updates.departmentId, isActive: true }))) {
                 return res.status(400).json({ message: "Department is not active or does not exist." });
@@ -117,7 +111,7 @@ const updateUser = async (req, res, next) => {
         if (user.role !== "manager") user.departmentId = undefined;
         await user.save();
         // Field NAMES only: values (and passwords) never go into the log.
-        const changed = ["role", "name", "mobileNo", "departmentId"].filter((field) => updates[field] !== undefined);
+        const changed = ["role", "name", "departmentId"].filter((field) => updates[field] !== undefined);
         await recordAudit(req, {
             event: "user_updated",
             targetType: "User",

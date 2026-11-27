@@ -69,7 +69,7 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - `rejected` stays an admin-only status; `escalated` is not added (needs manager confirmation).
 - Priority names are still low/medium/high/urgent (wireframe says "Critical").
 - No "Submitted" history entry is written when a grievance is created yet.
-- Wireframe registration/login/forgot-password differences (extra fields, mobile login, CAPTCHA, OTP) are untouched.
+- Wireframe registration/login/forgot-password differences (extra fields and CAPTCHA) are untouched.
 
 
 ## Admin login (CAPTCHA + admin-only endpoint)
@@ -85,18 +85,14 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - Admin and manager share one handler (`createStaffLogin`) but have separate endpoints and separate lock-out counters (key = role + email).
 - A manager can sign in even if no department is assigned yet; the existing access rules then show them no grievances (`canAccessGrievance`).
 
-## Citizen login fixes
-- `POST /api/auth/login` is CITIZEN-ONLY. Body `{ identifier, password, captchaId, captchaAnswer }` (`identifier` = email or 10-digit mobile, with or without +91; `{ email }` remains accepted). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). CAPTCHA challenges are one-use and expire after five minutes.
-- `User.mobileNo` is unique (sparse). If your database already has duplicate mobile numbers the index cannot be built: fix them first. Numbers saved by the very first version of `register` may be un-normalised (e.g. with spaces) and will not match a mobile login until cleaned to 10 digits.
-- `POST /api/auth/register` returns 409 with `code` `EMAIL_EXISTS` or `MOBILE_EXISTS`.
-- Registration requires name, email, mobile, state, district, city/taluka, complete address, PIN, and `termsAccepted: true`. It records the terms acceptance and server timestamp. New passwords require at least eight characters with a letter, number, and symbol.
-
-## Email verification (controlled by `REQUIRE_EMAIL_VERIFICATION`)
-- Set `REQUIRE_EMAIL_VERIFICATION=true` and configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM` in the private `backend/.env`. Gmail requires a Google App Password with 2-Step Verification enabled; the normal account password will not work. Set `MAIL_FROM` to the authenticated mailbox or an authorized sender.
-- A new citizen is created as unverified and receives a six-digit code by email. `POST /api/auth/verify-email { email, code }` verifies it and returns a citizen session so the frontend can sign the citizen in and open their dashboard. Codes expire in 10 minutes, are stored as hashes, work once, and allow at most five attempts; resending invalidates the previous code. Resend uses `POST /api/auth/resend-verification { identifier }` and is limited to five per 15 minutes per IP+identifier.
-- `POST /api/auth/verify-email/:token` remains only for links issued by earlier versions. Login returns 403 `EMAIL_NOT_VERIFIED` only after the correct password. Accounts with `emailVerified` unset (all existing ones) are treated as verified.
-- Email sending is awaited and failures return 503 instead of reporting successful delivery. Missing SMTP configuration also returns 503. Check the backend log for a safe SMTP error code, then run `npm run test-email` with `TEST_EMAIL` set to a mailbox you can access.
-- MOBILE verification is NOT implemented (needs an SMS/OTP provider).
+## Email-only citizen registration and login
+- `POST /api/auth/login` is CITIZEN-ONLY. Body `{ identifier, password, captchaId, captchaAnswer }` (`identifier` is an email; `{ email }` remains accepted). Admin, manager, unknown and wrong-password all return the same 401 `Invalid email or password.` Staff must use `/api/auth/admin-login` or `/api/auth/manager-login` (CAPTCHA). CAPTCHA challenges are one-use and expire after five minutes.
+- Registration requires name, email, state, district, city/taluka, complete address, PIN, and `termsAccepted: true`. It records the terms acceptance and server timestamp. New passwords require at least eight characters with a letter, number, and symbol.
+- Citizen email verification is mandatory. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `MAIL_FROM` in the private `backend/.env`. Gmail requires a Google App Password with 2-Step Verification enabled; set `MAIL_FROM` to the authenticated mailbox or an authorized sender.
+- `POST /api/auth/register` stores registration details in the expiring `pendingregistrations` collection and emails a six-digit code. It does not create a `User` document or issue a token. `POST /api/auth/verify-email { email, code }` creates the citizen account only after a valid code and returns a citizen session. Codes expire in 10 minutes, are stored as hashes, and allow at most five attempts; resending invalidates the previous code. Pending registrations expire after 24 hours.
+- Resend uses `POST /api/auth/resend-verification { identifier }` and is limited to five requests per 15 minutes per IP+email. Email sending is awaited and failures return 503; failed delivery leaves only a pending registration, never a user account. Missing SMTP configuration also returns 503. Check the backend log for a safe SMTP error code, then run `npm run test-email` with `TEST_EMAIL` set to a mailbox you can access.
+- `POST /api/auth/verify-email/:token` remains for links issued by earlier versions. Existing accounts with `emailVerified` unset remain compatible.
+- To remove mobile fields from existing user documents and drop the old mobile index, run `$env:CONFIRM_REMOVE_MOBILE_DATA="true"; npm run migrate:remove-mobile-data` in PowerShell from `backend/`. This migration is explicit and removes stored mobile and mobile-verification fields.
 - Tests: `npm run test:citizen` (needs a test database, wipes it).
 
 
