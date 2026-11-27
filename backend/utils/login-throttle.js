@@ -18,15 +18,15 @@
 //   wrong CAPTCHA   ("captcha_failed")
 //     - LIMITS.captcha : same IP                   -> 20 failures. A mistyped CAPTCHA never locks an
 //                        ACCOUNT, so nobody can lock an admin out just by sending bad CAPTCHAs.
-const { AuditLog } = require("../models");
+const { AuditLog, LoginAttempt } = require("../models");
 
 const WINDOW_MS = 15 * 60 * 1000;
 const LIMITS = { pair: 5, account: 20, ip: 30, captcha: 20 };
 
 // The newest `limit` matching failures. If that many exist inside the window, the lock lasts until
 // the oldest of them is WINDOW_MS old.
-const lockFor = async (filter, limit, since, now) => {
-    const recent = await AuditLog.find({ ...filter, createdAt: { $gt: since } })
+const lockFor = async (Model, filter, limit, since, now) => {
+    const recent = await Model.find({ ...filter, createdAt: { $gt: since } })
         .sort({ createdAt: -1 })
         .limit(limit)
         .select("createdAt");
@@ -57,10 +57,51 @@ const getLockStatus = async ({ ip, role, identifier }) => {
 
     let worst = { locked: false, retryAfterSeconds: 0, scope: "" };
     for (const [scope, filter, limit, since] of checks) {
-        const seconds = await lockFor(filter, limit, since, now);
+        const seconds = await lockFor(AuditLog, filter, limit, since, now);
         if (seconds > worst.retryAfterSeconds) worst = { locked: true, retryAfterSeconds: seconds, scope };
     }
     return worst;
 };
 
-module.exports = { getLockStatus, LIMITS, WINDOW_MS };
+const getCitizenLockStatus = async ({ ip, identifier }) => {
+    const now = Date.now();
+    const windowStart = new Date(now - WINDOW_MS);
+    const checks = [
+        ["ip_account", { reason: "invalid_credentials", ip, identifier }, LIMITS.pair],
+        ["account", { reason: "invalid_credentials", identifier }, LIMITS.account],
+        ["ip", { reason: "invalid_credentials", ip }, LIMITS.ip],
+        ["captcha", { reason: "captcha_failed", ip }, LIMITS.captcha],
+    ];
+
+    let worst = { locked: false, retryAfterSeconds: 0, scope: "" };
+    for (const [scope, filter, limit] of checks) {
+        const seconds = await lockFor(LoginAttempt, filter, limit, windowStart, now);
+        if (seconds > worst.retryAfterSeconds) worst = { locked: true, retryAfterSeconds: seconds, scope };
+    }
+    return worst;
+};
+
+const recordCitizenLoginAttempt = (attempt) => LoginAttempt.create(attempt);
+
+const recordCitizenBlocked = async ({ ip, identifier }) => {
+    const recent = await LoginAttempt.exists({
+        ip,
+        identifier,
+        reason: "blocked",
+        createdAt: { $gt: new Date(Date.now() - 60 * 1000) },
+    });
+    if (!recent) await recordCitizenLoginAttempt({ ip, identifier, reason: "blocked" });
+};
+
+const clearCitizenPairFailures = ({ ip, identifier }) =>
+    LoginAttempt.deleteMany({ ip, identifier, reason: "invalid_credentials" });
+
+module.exports = {
+    getLockStatus,
+    getCitizenLockStatus,
+    recordCitizenLoginAttempt,
+    recordCitizenBlocked,
+    clearCitizenPairFailures,
+    LIMITS,
+    WINDOW_MS,
+};

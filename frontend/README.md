@@ -50,11 +50,11 @@ src/
 - Sign-in requires the CAPTCHA, email/password, and a one-time code emailed to the administrator. The token is not
   issued until the code is verified. OTPs expire after five minutes and can be resent after the cooldown.
 - The admin token is kept in `sessionStorage` only (no "remember me"); passwords are never stored client-side and raw OTPs are not retained.
+- The pending OTP challenge ID and its safe navigation metadata are kept in tab-scoped `sessionStorage`, so refreshing the verification page does not lose the challenge.
 - Admins sign in with their **email**. The User model has no separate Admin ID field (`SUPPORTS_ADMIN_ID_LOGIN` in `config/auth.config.js`).
 - The dashboard provides grievance totals, department workload, recent activity, urgent alerts, reports, grievance assignment,
   and department/manager management. Manager password changes invalidate existing manager sessions.
-- "Forgot Password?" links to `/forgot-password`, which is still a placeholder page. An admin-specific recovery
-  page has not been built (the backend `forgot-password` / `reset-password` endpoints exist and work for any account with an email).
+- "Forgot Password?" links to `/forgot-password`. The backend awaits reset-email delivery, removes a newly issued token if delivery fails, and keeps responses generic to prevent account enumeration.
 
 ## Citizen Login notes
 

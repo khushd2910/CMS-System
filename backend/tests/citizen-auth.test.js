@@ -5,6 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 process.env.MONGO_DB_NAME = process.env.MONGO_DB_NAME || "cms_test";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017";
 process.env.NODE_ENV = "test";
+process.env.TRUST_PROXY = "1";
 process.env.SMTP_HOST = "smtp.test";
 process.env.SMTP_USER = "sender@test.invalid";
 process.env.SMTP_PASS = "test-only-password";
@@ -22,25 +23,30 @@ const sentVerificationCodes = [];
 let deliverVerificationCode = async (message) => sentVerificationCodes.push(message);
 emailService.sendVerificationEmail = (message) => deliverVerificationCode(message);
 const { app } = require("../index");
-const { User, PendingRegistration, Department } = require("../models");
+const { User, PendingRegistration, Department, LoginAttempt } = require("../models");
 const { _createForTests } = require("../utils/captcha");
 
 let server, base;
-const call = async (method, path, body) => {
+let ipSequence = 1;
+const nextIp = () => `198.51.100.${ipSequence++}`;
+const call = async (method, path, body, ip) => {
     const res = await fetch(base + path, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            ...(ip ? { "X-Forwarded-For": ip } : {}),
+        },
         body: body ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
 };
-const citizenLogin = (credentials) => {
+const citizenLogin = (credentials, ip = nextIp()) => {
     const captcha = _createForTests("TEST");
     return call("POST", "/api/auth/login", {
         ...credentials,
         captchaId: captcha.id,
         captchaAnswer: "TEST",
-    });
+    }, ip);
 };
 const registration = (overrides = {}) => ({
     name: "New Citizen",
@@ -67,6 +73,7 @@ const check = async (name, fn) => {
     await mongoose.connection.dropDatabase();
     await User.init();
     await PendingRegistration.init();
+    await LoginAttempt.init();
     server = app.listen(0);
     base = `http://127.0.0.1:${server.address().port}`;
 
@@ -92,6 +99,27 @@ const check = async (name, fn) => {
             assert.equal(response.status, 401);
             assert.deepEqual(response.body, wrong.body);
         }
+    });
+    await check("citizen failed-login throttling locks a pair and clears after a successful sign-in", async () => {
+        const ip = nextIp();
+        for (let attempt = 0; attempt < 4; attempt++) {
+            assert.equal((await citizenLogin({ identifier: "citizen@t.in", password: "incorrect" }, ip)).status, 401);
+        }
+        assert.equal((await citizenLogin({ identifier: "citizen@t.in", password: "Passw0rd!" }, ip)).status, 200);
+
+        for (let attempt = 0; attempt < 4; attempt++) {
+            assert.equal((await citizenLogin({ identifier: "citizen@t.in", password: "incorrect" }, ip)).status, 401);
+        }
+        assert.equal((await citizenLogin({ identifier: "citizen@t.in", password: "Passw0rd!" }, ip)).status, 200);
+
+        const lockoutIp = nextIp();
+        for (let attempt = 0; attempt < 5; attempt++) {
+            assert.equal((await citizenLogin({ identifier: "citizen@t.in", password: "incorrect" }, lockoutIp)).status, 401);
+        }
+        const locked = await citizenLogin({ identifier: "citizen@t.in", password: "Passw0rd!" }, lockoutIp);
+        assert.equal(locked.status, 429);
+        assert.equal(locked.body.code, "LOGIN_RATE_LIMITED");
+        assert.ok(locked.body.retryAfterSeconds > 0);
     });
     await check("registration validates email, address, consent, and password", async () => {
         for (const body of [

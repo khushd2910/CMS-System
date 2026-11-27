@@ -9,6 +9,7 @@ import CaptchaField, { useCaptcha } from "../ui/CaptchaField";
 import { useAuth } from "../../context/AuthContext";
 import { validateCaptchaAnswer, validatePassword } from "../../utils/validators";
 import { redirectTarget } from "../../utils/redirect";
+import { clearAdminOtpChallenge, saveAdminOtpChallenge } from "../../services/adminOtpChallengeStorage";
 
 const EMPTY_FORM = { identifier: "", password: "", captchaAnswer: "" };
 const NO_ERRORS = { identifier: "", password: "", captchaAnswer: "" };
@@ -94,6 +95,7 @@ export default function StaffLoginPage({ config }) {
 
     setSubmitting(true);
     try {
+      if (config.role === "admin") clearAdminOtpChallenge();
       const result = await signIn({
         email: form.identifier.trim(),
         password: form.password,
@@ -101,14 +103,17 @@ export default function StaffLoginPage({ config }) {
         captchaAnswer: form.captchaAnswer.trim(),
       });
       if (config.role === "admin" && result?.requiresOtp) {
+        const resendAfterSeconds = result.resendAfterSeconds || 60;
+        const challengeState = {
+          challengeId: result.challengeId,
+          email: form.identifier.trim().toLowerCase(),
+          resendAfterAt: Date.now() + resendAfterSeconds * 1000,
+          returnTo: afterLogin,
+        };
+        saveAdminOtpChallenge(challengeState);
         navigate("/admin/verify-otp", {
           replace: true,
-          state: {
-            challengeId: result.challengeId,
-            email: form.identifier.trim().toLowerCase(),
-            resendAfterSeconds: result.resendAfterSeconds,
-            returnTo: afterLogin,
-          },
+          state: challengeState,
         });
         return;
       }

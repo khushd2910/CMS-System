@@ -6,6 +6,7 @@ globalThis.window = { sessionStorage: mem(), localStorage: mem() };
 const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), server: { middlewareMode: true }, appType: "custom", logLevel: "error" });
 const { request, onSessionEnded } = await vite.ssrLoadModule("/src/services/apiClient.js");
 const { tokenStorage } = await vite.ssrLoadModule("/src/services/tokenStorage.js");
+const otpStorage = await vite.ssrLoadModule("/src/services/adminOtpChallengeStorage.js");
 let ended = 0;
 onSessionEnded(() => { ended += 1; });
 const reply = (status) => async () => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => ({ message: "x" }) });
@@ -30,4 +31,16 @@ globalThis.fetch = async () => { tokenStorage.set("tok-2", false); return reply(
 await assert.rejects(request("/auth/me", { auth: true }));
 assert.equal(ended, 1, "stale 401 for an old token is ignored");
 console.log("api client expiry handling: 5 checks passed");
+
+const challenge = {
+  challengeId: "challenge-123",
+  email: "admin@example.test",
+  resendAfterAt: Date.now() + 30000,
+  returnTo: "/admin/dashboard",
+};
+assert.equal(otpStorage.saveAdminOtpChallenge(challenge), true);
+assert.deepEqual(otpStorage.readAdminOtpChallenge(), challenge, "challenge state survives a page reload in sessionStorage");
+otpStorage.clearAdminOtpChallenge();
+assert.equal(otpStorage.readAdminOtpChallenge(), null, "verified challenge state is removed");
+console.log("admin OTP challenge storage: 3 checks passed");
 await vite.close();

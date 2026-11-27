@@ -36,6 +36,7 @@ function describeLoginError(error) {
   if (error.code === "TIMEOUT") return "The server took too long to respond. Please try again.";
   if (error.status === 0) return "Could not reach the server. Check your internet connection and try again.";
   if (error.status === 401) return "Invalid email or password. Check your details and try again.";
+  if (error.status === 429) return `Too many failed sign-in attempts. Please try again in ${formatWait(error.retryAfterSeconds || 900)}.`;
   if (error.status === 400) return error.message;
   return "The service is temporarily unavailable. Please try again in a few minutes.";
 }

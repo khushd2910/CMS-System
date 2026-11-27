@@ -7,6 +7,8 @@ import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { ADMIN_HOME_PATH, ADMIN_LOGIN_PATH } from "../config/auth.config";
 import { useAuth } from "../context/AuthContext";
+import { clearAdminOtpChallenge, readAdminOtpChallenge, saveAdminOtpChallenge } from "../services/adminOtpChallengeStorage";
+import { redirectTarget } from "../utils/redirect";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Admin Login", to: ADMIN_LOGIN_PATH }, { label: "Verify Identity" }];
 
@@ -27,12 +29,23 @@ export default function AdminOtpVerification() {
   const location = useLocation();
   const navigate = useNavigate();
   const { verifyAdminOtp, resendAdminOtp } = useAuth();
-  const challengeId = location.state?.challengeId;
+  const persistedChallenge = readAdminOtpChallenge();
+  const challengeState = persistedChallenge?.challengeId === location.state?.challengeId
+    ? persistedChallenge
+    : location.state?.challengeId
+      ? location.state
+      : persistedChallenge;
+  const challengeId = challengeState?.challengeId;
   const [code, setCode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(location.state?.resendAfterSeconds || 60);
+  const [secondsLeft, setSecondsLeft] = useState(() => {
+    if (typeof challengeState?.resendAfterAt === "number") {
+      return Math.max(0, Math.ceil((challengeState.resendAfterAt - Date.now()) / 1000));
+    }
+    return challengeState?.resendAfterSeconds || 60;
+  });
   const [resendLimitReached, setResendLimitReached] = useState(false);
 
   useEffect(() => {
@@ -57,7 +70,8 @@ export default function AdminOtpVerification() {
     setSubmitting(true);
     try {
       await verifyAdminOtp({ challengeId, code });
-      navigate(location.state?.returnTo || ADMIN_HOME_PATH, { replace: true });
+      clearAdminOtpChallenge();
+      navigate(redirectTarget(challengeState?.returnTo, { prefix: "/admin", fallback: ADMIN_HOME_PATH }), { replace: true });
     } catch (error) {
       setErrorMessage(describeError(error));
       setCode("");
@@ -72,7 +86,12 @@ export default function AdminOtpVerification() {
     setResending(true);
     try {
       const result = await resendAdminOtp(challengeId);
-      setSecondsLeft(result.resendAfterSeconds || 60);
+      const resendAfterSeconds = result.resendAfterSeconds || 60;
+      saveAdminOtpChallenge({
+        ...challengeState,
+        resendAfterAt: Date.now() + resendAfterSeconds * 1000,
+      });
+      setSecondsLeft(resendAfterSeconds);
       setCode("");
     } catch (error) {
       if (error.status === 429 && error.serverCode === "ADMIN_OTP_RESEND_LIMIT") {
@@ -131,7 +150,7 @@ export default function AdminOtpVerification() {
                   : "Resend OTP"}
             </Button>
             <p className="admin-otp-card__back">
-              <Link className="admin-form__forgot-link" to={ADMIN_LOGIN_PATH}>Back to Login</Link>
+              <Link className="admin-form__forgot-link" to={ADMIN_LOGIN_PATH} onClick={clearAdminOtpChallenge}>Back to Login</Link>
             </p>
           </form>
         </section>

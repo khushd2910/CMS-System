@@ -5,6 +5,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret";
 process.env.MONGO_DB_NAME = process.env.MONGO_DB_NAME || "cms_test";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017";
 process.env.NODE_ENV = "test";
+process.env.TRUST_PROXY = "1";
 process.env.SMTP_HOST = "smtp.test";
 process.env.SMTP_USER = "test@example.test";
 process.env.SMTP_PASS = "test-password";
@@ -23,11 +24,14 @@ const mongoose = require("mongoose");
 const captchaModule = require("../utils/captcha");
 captchaModule.verifyCaptcha = (id, answer) => answer === "GOOD";
 const otpCodes = new Map();
+const sentPasswordResetEmails = [];
+let deliverPasswordResetEmail = async (message) => sentPasswordResetEmails.push(message);
 const emailModule = require("../utils/email");
 emailModule.sendAdminLoginOtpEmail = async ({ email, code }) => {
     otpCodes.set(email.toLowerCase(), code);
     return { accepted: [email] };
 };
+emailModule.sendPasswordResetEmail = (message) => deliverPasswordResetEmail(message);
 
 const connectDB = require("../config/db");
 const { app } = require("../index");
@@ -91,6 +95,53 @@ const runSeed = (extraEnv) =>
     });
 
     console.log("Password reset signs everyone out");
+    await check("forgot-password waits for email delivery and removes tokens when delivery fails", async () => {
+        const password = await bcrypt.hash("Passw0rd1!", 4);
+        await User.create({ name: "Reset", email: "forgot@t.in", role: "admin", password });
+
+        const originalHost = process.env.SMTP_HOST;
+        delete process.env.SMTP_HOST;
+        const unavailable = await call("POST", "/api/auth/forgot-password", { body: { email: "forgot@t.in" } });
+        const unavailableUnknown = await call("POST", "/api/auth/forgot-password", { body: { email: "unknown@t.in" } });
+        process.env.SMTP_HOST = originalHost;
+        assert.equal(unavailable.status, 503);
+        assert.equal(unavailable.body.code, "EMAIL_UNAVAILABLE");
+        assert.deepEqual(unavailableUnknown, unavailable, "missing SMTP configuration must not reveal account existence");
+        assert.equal((await User.findOne({ email: "forgot@t.in" }).select("+passwordResetTokenHash")).passwordResetTokenHash, undefined);
+
+        sentPasswordResetEmails.length = 0;
+        const sent = await call("POST", "/api/auth/forgot-password", { body: { email: "forgot@t.in" } });
+        assert.equal(sent.status, 202);
+        assert.equal(sentPasswordResetEmails.length, 1, "the email sender finished before the response");
+        assert.match(sentPasswordResetEmails[0].resetUrl, /\/reset-password\/[a-f0-9]{64}$/);
+        const unknown = await call("POST", "/api/auth/forgot-password", { body: { email: "unknown@t.in" } });
+        assert.deepEqual(unknown, sent, "successful and unknown-address responses must match");
+
+        deliverPasswordResetEmail = async () => {
+            throw Object.assign(new Error("test SMTP failure"), { code: "ETEST" });
+        };
+        const failed = await call("POST", "/api/auth/forgot-password", { body: { email: "forgot@t.in" } });
+        assert.equal(failed.status, 202);
+        assert.deepEqual(failed.body, sent.body, "delivery failure must not reveal that the address belongs to an account");
+        const afterFailure = await User.findOne({ email: "forgot@t.in" })
+            .select("+passwordResetTokenHash +passwordResetExpires");
+        assert.equal(afterFailure.passwordResetTokenHash, undefined);
+        assert.equal(afterFailure.passwordResetExpires, undefined);
+        deliverPasswordResetEmail = async (message) => sentPasswordResetEmails.push(message);
+    });
+    await check("forgot-password preserves its generic response for unknown addresses and throttles requests", async () => {
+        for (let attempt = 0; attempt < 5; attempt++) {
+            assert.equal((await call("POST", "/api/auth/forgot-password", {
+                body: { email: "unknown-reset@t.in" },
+            })).status, 202);
+        }
+        const limited = await call("POST", "/api/auth/forgot-password", {
+            body: { email: "unknown-reset@t.in" },
+        });
+        assert.equal(limited.status, 429);
+        assert.equal(limited.body.code, "EMAIL_RATE_LIMITED");
+        assert.ok(limited.body.retryAfterSeconds > 0);
+    });
     await check("old tokens stop working after a reset; a fresh login works", async () => {
         const oldPw = "Passw0rd1!", newPw = "Brand-New-Pw9!";
         await User.create({ name: "R", email: "reset@t.in", role: "admin", password: await bcrypt.hash(oldPw, 4) });

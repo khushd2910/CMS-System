@@ -9,7 +9,13 @@ const {
     sendAdminLoginOtpEmail,
 } = require("../utils/email");
 const { createCaptcha, verifyCaptcha } = require("../utils/captcha");
-const { getLockStatus } = require("../utils/login-throttle");
+const {
+    getLockStatus,
+    getCitizenLockStatus,
+    recordCitizenLoginAttempt,
+    recordCitizenBlocked,
+    clearCitizenPairFailures,
+} = require("../utils/login-throttle");
 const { recordAudit, normalizeIdentifier, clientIp } = require("../utils/audit");
 const { passwordPolicyError } = require("../utils/password");
 
@@ -236,12 +242,24 @@ const login = async (req, res, next) => {
     try {
         // "email" remains accepted for clients predating the identifier field.
         const raw = req.body?.identifier ?? req.body?.email;
-        const identifier = typeof raw === "string" ? raw.trim() : "";
+        const identifier = typeof raw === "string" ? raw.trim().toLowerCase() : "";
         const { password, captchaId, captchaAnswer } = req.body || {};
         if (!identifier || typeof password !== "string" || !password) {
             return res.status(400).json({ message: "Email and password are required." });
         }
+        const ip = clientIp(req);
+        const lock = await getCitizenLockStatus({ ip, identifier });
+        if (lock.locked) {
+            await recordCitizenBlocked({ ip, identifier });
+            res.set("Retry-After", String(lock.retryAfterSeconds));
+            return res.status(429).json({
+                message: "Too many failed sign-in attempts. Please try again later.",
+                code: "LOGIN_RATE_LIMITED",
+                retryAfterSeconds: lock.retryAfterSeconds,
+            });
+        }
         if (!verifyCaptcha(captchaId, captchaAnswer)) {
+            await recordCitizenLoginAttempt({ ip, identifier, reason: "captcha_failed" });
             return res.status(400).json({ message: "CAPTCHA verification failed.", code: "CAPTCHA_INVALID" });
         }
 
@@ -256,22 +274,26 @@ const login = async (req, res, next) => {
         // so here they get exactly the same answer as a wrong password: nothing reveals that the account
         // exists or what role it has.
         if (pending && passwordOk) {
+            await clearCitizenPairFailures({ ip, identifier });
             return res.status(403).json({
                 message: "Please verify your email address to finish creating your account.",
                 code: "EMAIL_NOT_VERIFIED",
             });
         }
         if (!user || !passwordOk || user.role !== "citizen") {
+            await recordCitizenLoginAttempt({ ip, identifier, reason: "invalid_credentials" });
             return res.status(401).json({ message: "Invalid email or password.", code: "INVALID_CREDENTIALS" });
         }
 
         // Only said AFTER the correct password, so it does not reveal accounts to a stranger.
         if (user.emailVerified === false) {
+            await clearCitizenPairFailures({ ip, identifier });
             return res.status(403).json({
                 message: "Please verify your email address before signing in.",
                 code: "EMAIL_NOT_VERIFIED",
             });
         }
+        await clearCitizenPairFailures({ ip, identifier });
         return res.json(authResponse(user));
     } catch (error) {
         return next(error);
@@ -509,29 +531,49 @@ const forgotPassword = async (req, res, next) => {
         const email = typeof req.body?.email === "string"
             ? req.body.email.trim().toLowerCase()
             : "";
-        if (email) {
-            const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpires");
-            if (user) {
-                const resetToken = crypto.randomBytes(32).toString("hex");
-                user.passwordResetTokenHash = crypto
-                    .createHash("sha256")
-                    .update(resetToken)
-                    .digest("hex");
-                user.passwordResetExpires = new Date(Date.now() + 30 * 60 * 1000);
-                await user.save();
-
-                const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
-                const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
-                if (process.env.SMTP_HOST) {
-                    sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl })
-                        .catch((error) => console.error(`Password reset email failed: ${error.message}`));
-                }
-            }
+        const genericResponse = {
+            message: "If an account exists for that email, reset instructions will be sent. If no email arrives shortly, check your spam folder or try again later.",
+        };
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(202).json(genericResponse);
+        if (!smtpConfigured()) {
+            return res.status(503).json({
+                message: "Password reset email is temporarily unavailable. Please try again later.",
+                code: "EMAIL_UNAVAILABLE",
+            });
+        }
+        const retryAfterSeconds = resendWaitSeconds(`${clientIp(req)}|password-reset|${email}`);
+        if (retryAfterSeconds) {
+            res.set("Retry-After", String(retryAfterSeconds));
+            return res.status(429).json({
+                message: "Too many password reset requests. Please try again later.",
+                code: "EMAIL_RATE_LIMITED",
+                retryAfterSeconds,
+            });
         }
 
-        return res.json({
-            message: "If an account exists for that email, password reset instructions have been sent.",
-        });
+        const user = await User.findOne({ email }).select("+passwordResetTokenHash +passwordResetExpires");
+        if (!user) return res.status(202).json(genericResponse);
+
+        const resetToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+        user.passwordResetTokenHash = tokenHash;
+        user.passwordResetExpires = new Date(Date.now() + 30 * 60 * 1000);
+        await user.save();
+
+        const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
+        const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
+        try {
+            await sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl });
+        } catch (error) {
+            await User.updateOne(
+                { _id: user._id, passwordResetTokenHash: tokenHash },
+                { $unset: { passwordResetTokenHash: 1, passwordResetExpires: 1 } }
+            );
+            console.error(`Password reset email failed (${error.code || "SMTP_ERROR"}).`);
+            return res.status(202).json(genericResponse);
+        }
+
+        return res.status(202).json(genericResponse);
     } catch (error) {
         return next(error);
     }

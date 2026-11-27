@@ -117,12 +117,13 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - A wrong CAPTCHA never counts against an ACCOUNT, so nobody can lock an admin out by sending bad CAPTCHAs.
 - Trade-off of the "any IP + same account" rule: while someone is guessing from many IPs the real owner is also asked to wait. Raise `LIMITS.account` if that is a problem.
 - Admin and manager counters are separate. Locked attempts are logged once per minute per IP+account, so hammering a locked account cannot fill the database.
+- Citizen login uses the same thresholds and server-side database checks. Its failed attempts are kept in the `loginattempts` collection (not the audit trail) with a 15-minute TTL; a correct sign-in clears that IP+account pair's password failures.
 
 **Behind a proxy / load balancer** set `TRUST_PROXY=1` (the NUMBER of proxies in front of Node). Without it every visitor looks like the proxy's IP and the IP rules above lock everybody together. `TRUST_PROXY=true` is refused on purpose (visitors could fake their IP). In production the server prints a warning when it is not set (`config/trust-proxy.js`).
 
 **Audit trail** (`models/audit-log.model.js`, `utils/audit.js`, collection `auditlogs`). One document per event: who (user id, or the e-mail typed on a failed login), role, event, outcome (`success` / `failure` / `blocked`), reason, client IP and browser, the record affected, time. Never stored: passwords, tokens, CAPTCHA answers, request bodies. A failure to write a log entry is printed to the console and never blocks the action.
 - Logged: admin and manager login attempts (success, wrong credentials, wrong CAPTCHA, blocked), staff logout, password reset by e-mailed link (any role), grievance assignment / status / priority changes, user create / update (field names only), department create / update, attachment upload / delete by staff.
-- NOT logged: citizen sign-ins and citizen actions (their login has no lock-out yet, so logging each try would let anyone fill the database), reading or searching records, forgot-password requests.
+- NOT logged: citizen sign-ins and actions, reading or searching records, and forgot-password requests. Failed citizen login attempts are stored separately and temporarily in `loginattempts` for throttling, then expire after 15 minutes.
 - There is no retention rule: the collection only grows. Decide how long to keep it (an archive job, or a TTL index) before going live.
 - Read it: `GET /api/admin/audit-logs?event=&outcome=&role=&userId=&identifier=&from=&to=&page=&limit=` (admin only, newest first). `identifier` is a partial match, `to=2026-11-30` includes the whole day. This is the data for the wireframe's "Activity Logs" table.
 
@@ -135,6 +136,7 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 
 
 ## Login and session fixes
+- **Password reset delivery.** Forgot-password requests require complete SMTP configuration and await the email sender. A token created for a failed delivery is removed and the SMTP error code is logged, while the response stays generic to prevent account enumeration. Well-formed requests are rate-limited to five per IP and email per 15 minutes.
 - **Password length limit.** `passwordPolicyError` (`utils/password.js`) now refuses passwords over 72 BYTES (bcrypt ignores everything after that). Applies to admin-created users and password reset. The frontend uses the same number (`utils/passwordRules.js`).
 - **Password reset signs out every device.** `User.tokenVersion` (default 0) goes up by one on every reset. Login tokens carry it (`tv`); `middleware/auth.js` answers 401 to a token whose number is old. Old tokens issued before this change have no `tv` and count as 0, so existing sessions keep working until the first reset.
 - **`npm run seed` no longer resets the admin password.** If the admin already exists the password is left alone. To change it on purpose: `RESET_ADMIN_PASSWORD=true npm run seed` (this also signs out its old sessions). The seed never turns an existing citizen/manager into an admin, and `ADMIN_PASSWORD` is only needed when creating or resetting.
