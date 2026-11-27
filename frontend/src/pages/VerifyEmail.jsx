@@ -1,46 +1,34 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { CircleAlert, CircleCheck, LoaderCircle } from "lucide-react";
+import { useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import PortalLayout from "../components/layout/PortalLayout";
 import TextField from "../components/ui/TextField";
 import Button from "../components/ui/Button";
 import Alert from "../components/ui/Alert";
 import { CITIZEN_HOME_PATH } from "../config/auth.config";
 import { useAuth } from "../context/AuthContext";
-import { authService } from "../services/authService";
 import { formatWait } from "../hooks/useCooldown";
 import { useResendCode } from "../hooks/useResendCode";
 
 const BREADCRUMB = [{ label: "Home", to: "/" }, { label: "Verify Email" }];
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Email verification by six-digit code (POST /api/auth/verify-email { email, code }).
 export default function VerifyEmail() {
-  const { token } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { verifyEmail } = useAuth();
   const [email, setEmail] = useState(location.state?.email || "");
   const [code, setCode] = useState("");
-  const [status, setStatus] = useState(token ? "verifying-link" : "ready");
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const resend = useResendCode();
-
-  useEffect(() => {
-    if (!token) return undefined;
-    const controller = new AbortController();
-    authService
-      .verifyEmailLink(token, { signal: controller.signal })
-      .then(() => !controller.signal.aborted && setStatus("success"))
-      .catch(() => !controller.signal.aborted && setStatus("failed-link"));
-    return () => controller.abort();
-  }, [token]);
 
   async function handleSubmit(event) {
     event.preventDefault();
     if (submitting) return;
     setFormError("");
     const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setFormError("Enter a valid email address.");
       return;
     }
@@ -52,11 +40,8 @@ export default function VerifyEmail() {
     setSubmitting(true);
     try {
       const result = await verifyEmail({ email: normalizedEmail, code });
-      if (result.token) {
-        navigate(CITIZEN_HOME_PATH, { replace: true });
-        return;
-      }
-      setStatus("success");
+      // A verified citizen is signed in straight away.
+      navigate(result.token ? CITIZEN_HOME_PATH : "/login", { replace: true });
     } catch (error) {
       setFormError(error.status === 0
         ? "Could not reach the server. Check your connection and try again."
@@ -65,40 +50,18 @@ export default function VerifyEmail() {
           : error.status === 409
             ? "An account with this email already exists. Sign in instead."
             : "Email verification is temporarily unavailable. Please try again.");
-    } finally {
       setSubmitting(false);
     }
   }
 
   async function handleResend() {
     const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setFormError("Enter the email address you used to register.");
       return;
     }
     setFormError("");
     await resend.send(normalizedEmail);
-  }
-
-  if (token) {
-    return (
-      <PortalLayout title="Verify Email" breadcrumb={BREADCRUMB}>
-        <section className="card register-success" aria-labelledby="verify-heading" aria-live="polite">
-          {status === "verifying-link" && <LoaderCircle className="btn__spinner" size={44} aria-hidden="true" />}
-          {status === "success" && <CircleCheck className="register-success__icon" size={44} aria-hidden="true" />}
-          {status === "failed-link" && <CircleAlert className="register-success__failed" size={44} aria-hidden="true" />}
-          <h1 className="card__title" id="verify-heading">
-            {status === "verifying-link" ? "Verifying your email…" : status === "success" ? "Email Verified" : "Verification Failed"}
-          </h1>
-          <p className="card__subtitle">
-            {status === "verifying-link" && "Please wait a moment."}
-            {status === "success" && "Your email address has been verified. You can now sign in."}
-            {status === "failed-link" && "This verification link is invalid or has expired. Use the verification code instead."}
-          </p>
-          {status !== "verifying-link" && <p><Link className="link" to="/login">Go to Citizen Login</Link></p>}
-        </section>
-      </PortalLayout>
-    );
   }
 
   const resendWait = resend.secondsLeftFor(email);

@@ -11,10 +11,6 @@ export const authService = {
   verifyEmail: ({ email, code }) =>
     request("/auth/verify-email", { method: "POST", body: { email, code } }),
 
-  // Compatibility for verification links sent before the OTP flow was enabled.
-  verifyEmailLink: (token, options) =>
-    request(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST", ...options }),
-
   // -> { message }. The answer is the same whether or not the account exists.
   resendVerification: ({ identifier }) =>
     request("/auth/resend-verification", { method: "POST", body: { identifier } }),

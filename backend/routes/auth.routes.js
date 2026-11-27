@@ -10,7 +10,6 @@ const {
     getCaptcha,
     adminLogin,
     managerLogin,
-    verifyEmail,
     verifyEmailCode,
     resendVerification,
 } = require("../controller/auth.controller");
@@ -19,7 +18,6 @@ const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
-router.post("/verify-email/:token", verifyEmail);
 router.post("/verify-email", verifyEmailCode);
 router.post("/resend-verification", resendVerification);
 router.get("/captcha", getCaptcha);

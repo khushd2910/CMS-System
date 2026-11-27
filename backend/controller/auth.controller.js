@@ -274,26 +274,6 @@ const login = async (req, res, next) => {
     }
 };
 
-const verifyEmail = async (req, res, next) => {
-    try {
-        const token = typeof req.params.token === "string" ? req.params.token : "";
-        const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-        const user = await User.findOne({
-            emailVerificationTokenHash: tokenHash,
-            emailVerificationExpires: { $gt: new Date() },
-        }).select("+emailVerificationTokenHash +emailVerificationExpires");
-        if (!token || !user) {
-            return res.status(400).json({ message: "Verification link is invalid or has expired." });
-        }
-        // Safe to repeat: opening the same link twice (or a browser pre-loading it) still ends "verified".
-        user.emailVerified = true;
-        await user.save();
-        return res.json({ message: "Your email address has been verified. You can now sign in." });
-    } catch (error) {
-        return next(error);
-    }
-};
-
 const verifyEmailCode = async (req, res, next) => {
     try {
         const email = clean(req.body?.email).toLowerCase();
@@ -658,5 +638,5 @@ const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password
 
 module.exports = {
     register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
-    verifyEmail, verifyEmailCode, resendVerification,
+    verifyEmailCode, resendVerification,
 };

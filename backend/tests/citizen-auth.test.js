@@ -220,15 +220,10 @@ const check = async (name, fn) => {
         assert.equal(limited.body.code, "EMAIL_RATE_LIMITED");
         assert.ok(limited.body.retryAfterSeconds > 0);
     });
-    await check("legacy email verification links remain accepted", async () => {
-        const crypto = require("node:crypto");
-        const token = "t".repeat(64);
-        await User.updateOne({ email: "citizen@t.in" }, {
-            emailVerificationTokenHash: crypto.createHash("sha256").update(token).digest("hex"),
-            emailVerificationExpires: new Date(Date.now() + 60000),
-            emailVerified: false,
-        });
-        assert.equal((await call("POST", `/api/auth/verify-email/${token}`)).status, 200);
+    await check("the old link-based verification endpoint is gone", async () => {
+        // It used to accept any string as a "token", with no attempt limit. Only the six-digit code flow remains.
+        assert.equal((await call("POST", "/api/auth/verify-email/123456")).status, 404);
+        assert.equal((await call("POST", `/api/auth/verify-email/${"t".repeat(64)}`)).status, 404);
     });
 
     console.log(`\n${passed} checks passed`);
