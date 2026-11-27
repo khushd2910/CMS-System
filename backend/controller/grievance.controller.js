@@ -2,6 +2,7 @@ const { Grievance, StatusHistory, Department, User, Notification } = require("..
 const { sendGrievanceStatusEmail } = require("../utils/email");
 const { recordAudit } = require("../utils/audit");
 const { getPagination, paginationMeta } = require("../utils/pagination");
+const { validateGrievanceInput } = require("../utils/grievance-input");
 const {
     STATUSES,
     PRIORITIES,
@@ -30,28 +31,35 @@ const withRelations = (query) =>
 
 const createGrievance = async (req, res, next) => {
     try {
-        const { title, description, category, location, requestedDepartmentId, priority } =
-            req.body || {};
-        if (!title || !description || !category) {
-            return res.status(400).json({ message: "title, description, and category are required." });
+        // The browser form also checks these, but anyone can call the API directly, so the server checks too.
+        const { values, error } = validateGrievanceInput(req.body, {
+            canSetPriority: req.user.role === "admin",
+        });
+        if (error) {
+            return res.status(400).json({ message: error });
         }
         if (
-            requestedDepartmentId &&
-            !(await Department.exists({ _id: requestedDepartmentId, isActive: true }))
+            values.requestedDepartmentId &&
+            !(await Department.exists({ _id: values.requestedDepartmentId, isActive: true }))
         ) {
             return res.status(400).json({ message: "Selected department is not active or does not exist." });
         }
-        const grievance = await Grievance.create({
-            referenceNumber: makeReferenceNumber(),
-            title,
-            description,
-            category,
-            location,
-            requestedDepartmentId,
-            // Priority is decided by staff. A citizen's value is ignored (default: medium).
-            priority: req.user.role === "admin" ? priority : undefined,
-            citizenId: req.user._id,
-        });
+
+        // The reference number is random, so two grievances could (very rarely) get the same one.
+        // The database refuses the second, and we simply try again with a new number.
+        let grievance;
+        for (let attempt = 1; !grievance; attempt += 1) {
+            try {
+                grievance = await Grievance.create({
+                    ...values, // title, description, category, location, requestedDepartmentId (+ priority for admins)
+                    referenceNumber: makeReferenceNumber(),
+                    citizenId: req.user._id,
+                });
+            } catch (createError) {
+                const isReferenceClash = createError.code === 11000 && createError.keyPattern?.referenceNumber;
+                if (!isReferenceClash || attempt >= 3) throw createError;
+            }
+        }
         return res.status(201).json({ grievance });
     } catch (error) {
         return next(error);

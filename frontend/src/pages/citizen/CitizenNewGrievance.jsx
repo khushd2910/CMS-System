@@ -3,7 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import Alert from "../../components/ui/Alert";
 import Button from "../../components/ui/Button";
 import PortalLayout from "../../components/layout/PortalLayout";
+import { attachmentService } from "../../services/attachmentService";
 import { citizenService } from "../../services/citizenService";
+import {
+  ACCEPT_ATTRIBUTE,
+  MAX_FILES_ON_NEW_GRIEVANCE,
+  checkAttachmentFile,
+  formatFileSize,
+} from "../../utils/attachmentRules";
 
 const INITIAL_FORM = {
   title: "",
@@ -32,6 +39,8 @@ export default function CitizenNewGrievance() {
   const [loadingDepartments, setLoadingDepartments] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [files, setFiles] = useState([]); // optional attachments, uploaded right after the grievance is saved
+  const [submitStage, setSubmitStage] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -52,6 +61,28 @@ export default function CitizenNewGrievance() {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
     if (errorMessage) setErrorMessage("");
+  }
+
+  function handleFiles(event) {
+    const chosen = Array.from(event.target.files || []);
+    event.target.value = ""; // lets the same file be chosen again later
+    if (!chosen.length) return;
+    const next = [...files];
+    for (const file of chosen) {
+      const problem = checkAttachmentFile(file);
+      if (problem) {
+        setErrorMessage(problem);
+        continue;
+      }
+      if (next.length >= MAX_FILES_ON_NEW_GRIEVANCE) {
+        setErrorMessage(`You can attach up to ${MAX_FILES_ON_NEW_GRIEVANCE} files here. You can add more later from the grievance page.`);
+        break;
+      }
+      if (next.some((item) => item.name === file.name && item.size === file.size)) continue; // same file twice
+      next.push(file);
+      setErrorMessage("");
+    }
+    setFiles(next);
   }
 
   async function handleSubmit(event) {
@@ -86,12 +117,25 @@ export default function CitizenNewGrievance() {
 
     setSubmitting(true);
     setErrorMessage("");
+    setSubmitStage("");
     try {
       const { grievance } = await citizenService.createGrievance(payload);
-      navigate(`/citizen/grievances/${grievance._id}`, { replace: true, state: { created: true } });
+      // The grievance is saved. Now upload the files one by one. If a file fails we do NOT undo the grievance:
+      // we remember the name and tell the person on the next page, where they can try that file again.
+      const uploadFailures = [];
+      for (const [index, file] of files.entries()) {
+        setSubmitStage(`Uploading file ${index + 1} of ${files.length}…`);
+        try {
+          await attachmentService.upload(grievance._id, file);
+        } catch {
+          uploadFailures.push(file.name);
+        }
+      }
+      navigate(`/citizen/grievances/${grievance._id}`, { replace: true, state: { created: true, uploadFailures } });
     } catch (error) {
       setErrorMessage(error.message || "Could not submit your grievance. Please try again.");
       setSubmitting(false);
+      setSubmitStage("");
     }
   }
 
@@ -152,9 +196,26 @@ export default function CitizenNewGrievance() {
               <span>Postal code</span>
               <input name="postalCode" value={form.postalCode} onChange={handleChange} maxLength={12} inputMode="numeric" />
             </label>
+            <div className="citizen-form__wide attachment-picker">
+              <label htmlFor="grievance-files"><span>Photos or documents (optional)</span></label>
+              <input id="grievance-files" type="file" multiple accept={ACCEPT_ATTRIBUTE}
+                onChange={handleFiles} disabled={submitting} />
+              <small>JPG, PNG, WEBP or PDF, up to 10 MB each, at most {MAX_FILES_ON_NEW_GRIEVANCE} files.</small>
+              {files.length > 0 && (
+                <ul className="attachment-picker__list" aria-label="Files to upload">
+                  {files.map((file, index) => (
+                    <li key={`${file.name}-${file.size}`}>
+                      <span>{file.name} ({formatFileSize(file.size)})</span>
+                      <button type="button" disabled={submitting} onClick={() => setFiles(files.filter((_, i) => i !== index))}
+                        aria-label={`Remove ${file.name}`}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
           <div className="citizen-form__actions">
-            <Button type="submit" loading={submitting} loadingText="Submitting grievance…">Submit Grievance</Button>
+            <Button type="submit" loading={submitting} loadingText={submitStage || "Submitting grievance…"}>Submit Grievance</Button>
             <Link to="/citizen/dashboard">Cancel</Link>
           </div>
         </form>

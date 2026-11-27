@@ -393,13 +393,20 @@ const updateManager = async (req, res, next) => {
             manager.contactNumber = contactNumber || undefined;
         }
         if (updates.departmentId !== undefined) {
-            if (
-                !OBJECT_ID_PATTERN.test(String(updates.departmentId)) ||
-                !(await Department.exists({ _id: updates.departmentId, isActive: true }))
-            ) {
-                return res.status(400).json({ message: "Select an active department." });
+            const requestedDepartmentId = String(updates.departmentId);
+            // Only a CHANGE of department must point to an active one. Keeping the manager in the
+            // department they already have is always allowed, even if that department was deactivated
+            // later, so the admin can still fix a name, phone number or password.
+            const isUnchanged = String(manager.departmentId || "") === requestedDepartmentId;
+            if (!isUnchanged) {
+                if (
+                    !OBJECT_ID_PATTERN.test(requestedDepartmentId) ||
+                    !(await Department.exists({ _id: requestedDepartmentId, isActive: true }))
+                ) {
+                    return res.status(400).json({ message: "Select an active department." });
+                }
+                manager.departmentId = requestedDepartmentId;
             }
-            manager.departmentId = updates.departmentId;
         }
         if (updates.isActive !== undefined) {
             if (typeof updates.isActive !== "boolean") {

@@ -29,9 +29,13 @@ export class ApiError extends Error {
 }
 
 // notifyOnExpiry: set to false for a call where a 401 is expected and means nothing (e.g. signing out).
-export async function request(path, { method = "GET", body, auth = false, signal, notifyOnExpiry = true } = {}) {
+// timeoutMs: how long to wait for the server (file uploads pass a longer time).
+// body: normally an object (sent as JSON). A FormData body (file uploads) is sent as it is, and the browser
+// adds the right Content-Type itself, including the boundary the server needs to read the file.
+export async function request(path, { method = "GET", body, auth = false, signal, notifyOnExpiry = true, timeoutMs = TIMEOUT_MS } = {}) {
   const headers = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  if (body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
   let sentToken = null;
   if (auth) {
     sentToken = tokenStorage.get();
@@ -44,7 +48,7 @@ export async function request(path, { method = "GET", body, auth = false, signal
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, TIMEOUT_MS);
+  }, timeoutMs);
   signal?.addEventListener("abort", () => controller.abort(), { once: true });
 
   let response;
@@ -52,7 +56,7 @@ export async function request(path, { method = "GET", body, auth = false, signal
     response = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (error) {

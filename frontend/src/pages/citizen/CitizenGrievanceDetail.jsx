@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import Alert from "../../components/ui/Alert";
+import AttachmentsPanel from "../../components/AttachmentsPanel";
 import PortalLayout from "../../components/layout/PortalLayout";
+import { useAuth } from "../../context/AuthContext";
 import { citizenService } from "../../services/citizenService";
 
 const formatDate = (value) => value
@@ -12,6 +14,7 @@ const statusLabel = (status) => String(status || "").replaceAll("_", " ");
 export default function CitizenGrievanceDetail() {
   const { id } = useParams();
   const location = useLocation();
+  const { user } = useAuth();
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -61,6 +64,12 @@ export default function CitizenGrievanceDetail() {
             Your grievance has been submitted. Save this reference number: <strong>{grievance.referenceNumber}</strong>
           </p>
         )}
+        {location.state?.uploadFailures?.length > 0 && grievance && (
+          <Alert title="Some files were not uploaded">
+            Your grievance was submitted, but these files could not be uploaded: {location.state.uploadFailures.join(", ")}.
+            You can add them again in the Attachments section below.
+          </Alert>
+        )}
         {errorMessage && <Alert title="Grievance unavailable">{errorMessage}</Alert>}
         {loading ? (
           <p className="citizen-empty" role="status">Loading grievance details…</p>
@@ -105,6 +114,11 @@ export default function CitizenGrievanceDetail() {
                 ) : <p className="citizen-empty">No status updates have been recorded yet.</p>}
               </section>
             </div>
+            <AttachmentsPanel
+              grievanceId={grievance._id}
+              canUpload={!["closed", "rejected"].includes(grievance.status)}
+              currentUserId={user?.id}
+            />
             <div className="citizen-page__actions">
               <Link to="/citizen/grievances">Back to grievance history</Link>
               <Link to="/citizen/dashboard">Dashboard</Link>

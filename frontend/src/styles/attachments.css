@@ -1,0 +1,134 @@
+/* Files attached to a grievance (used on the citizen and admin grievance pages). */
+
+.attachments {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(17, 60, 105, 0.05);
+}
+
+.attachments h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--navy-deep);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.attachments .alert,
+.attachments__notice { margin-top: 10px; }
+
+.attachments__notice {
+  padding: 9px 12px;
+  border: 1px solid #b9dfc6;
+  border-radius: var(--radius);
+  background: #eef9f1;
+  color: #24633d;
+  font-size: 0.85rem;
+}
+
+.attachments__empty {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.attachments__list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachments__list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+}
+
+.attachments__icon { color: var(--navy); }
+
+.attachments__info { min-width: 0; }
+
+.attachments__info a {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--link);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.attachments__info small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.attachments__delete {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--error);
+  cursor: pointer;
+}
+.attachments__delete:hover:not(:disabled) { background: var(--error-bg); }
+.attachments__delete:disabled { cursor: progress; opacity: 0.5; }
+
+.attachments__upload {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.attachments__upload label { color: var(--text); font-size: 0.82rem; font-weight: 700; }
+.attachments__upload input[type="file"] { max-width: 100%; font-size: 0.82rem; }
+.attachments__upload small { color: var(--text-muted); font-size: 0.74rem; }
+
+/* File picker on the "File New Grievance" form */
+.attachment-picker { display: grid; gap: 6px; }
+.attachment-picker__list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.attachment-picker__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+.attachment-picker__list button {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.attachment-picker__list button:hover { text-decoration: underline; }
+.attachment-picker small { color: var(--text-muted); font-size: 0.78rem; }

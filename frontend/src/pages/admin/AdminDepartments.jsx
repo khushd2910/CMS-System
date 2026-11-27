@@ -25,6 +25,21 @@ function departmentForm(department) {
   };
 }
 
+// Deactivating a department does not touch its managers or its grievances, so tell the admin what will stay as it is.
+// Returns true when it is fine to go ahead.
+function confirmDeactivation(department) {
+  const managers = department.managerCount ?? 0;
+  const grievances = department.grievanceCount ?? 0;
+  if (!managers && !grievances) return true;
+  return window.confirm(
+    `Deactivate ${department.name}?\n\n` +
+    `It has ${managers} manager${managers === 1 ? "" : "s"} and ${grievances} grievance${grievances === 1 ? "" : "s"}.\n` +
+    "• No new grievances can be assigned to it, and no new managers can be added to it.\n" +
+    "• Its managers keep their accounts and can still work on grievances already assigned to it.\n" +
+    "• To stop a manager from signing in, deactivate their account on the Department Managers page."
+  );
+}
+
 export default function AdminDepartments() {
   const [departments, setDepartments] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -86,6 +101,8 @@ export default function AdminDepartments() {
   async function handleSubmit(event) {
     event.preventDefault();
     if (saving) return;
+    const editedDepartment = departments.find((department) => (department.id || department._id) === editingId);
+    if (editedDepartment && editedDepartment.isActive !== false && !form.isActive && !confirmDeactivation(editedDepartment)) return;
     setSaving(true);
     setErrorMessage("");
     setNotice("");
@@ -108,6 +125,7 @@ export default function AdminDepartments() {
 
   async function toggleActive(department) {
     const id = department.id || department._id;
+    if (department.isActive !== false && !confirmDeactivation(department)) return;
     try {
       await adminService.updateDepartment(id, { isActive: department.isActive === false });
       setNotice(`${department.name} ${department.isActive === false ? "activated" : "deactivated"}.`);

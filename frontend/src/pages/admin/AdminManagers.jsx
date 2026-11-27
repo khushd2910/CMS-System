@@ -60,9 +60,13 @@ export default function AdminManagers() {
     loadData();
   }, []);
 
-  const activeDepartments = useMemo(
-    () => departments.filter((department) => department.isActive !== false),
-    [departments]
+  // The department being edited stays in the dropdown even if it was deactivated later, so the form
+  // always shows where the manager really is. New choices are limited to active departments.
+  const editingManager = managers.find((manager) => (manager.id || manager._id) === editingId);
+  const currentDepartmentId = String(editingManager?.departmentId?._id || editingManager?.departmentId || "");
+  const departmentOptions = useMemo(
+    () => departments.filter((department) => department.isActive !== false || String(department._id) === currentDepartmentId),
+    [departments, currentDepartmentId]
   );
   const visibleManagers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -114,7 +118,9 @@ export default function AdminManagers() {
         name: form.name,
         email: form.email,
         contactNumber: form.contactNumber,
-        departmentId: form.departmentId,
+        // When editing, send the department only if it was really changed. A manager whose department
+        // was deactivated can then still have their other details updated.
+        ...(!editingId || form.departmentId !== currentDepartmentId ? { departmentId: form.departmentId } : {}),
         isActive: form.isActive,
         ...(form.password ? { password: form.password } : {}),
       };
@@ -175,8 +181,10 @@ export default function AdminManagers() {
             <select id="manager-department" name="departmentId" value={form.departmentId}
               onChange={updateField} disabled={saving} required>
               <option value="">Select an active department</option>
-              {activeDepartments.map((department) => (
-                <option key={department._id} value={department._id}>{department.name}</option>
+              {departmentOptions.map((department) => (
+                <option key={department._id} value={department._id}>
+                  {department.name}{department.isActive === false ? " (inactive)" : ""}
+                </option>
               ))}
             </select>
           </label>
@@ -237,7 +245,12 @@ export default function AdminManagers() {
                           <strong>{manager.name}</strong>
                           <span className="admin-table__sub">{manager.email}{manager.contactNumber ? ` · ${manager.contactNumber}` : ""}</span>
                         </td>
-                        <td>{manager.departmentId?.name || "Unassigned"}</td>
+                        <td>
+                          {manager.departmentId?.name || "Unassigned"}
+                          {manager.departmentId?.isActive === false && (
+                            <span className="admin-table__sub">Department is inactive</span>
+                          )}
+                        </td>
                         <td><span className={`admin-status ${manager.isActive === false ? "admin-status--inactive" : ""}`}>
                           {manager.isActive === false ? "Inactive" : "Active"}
                         </span></td>

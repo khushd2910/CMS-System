@@ -13,6 +13,7 @@ import "./styles/register.css";
 import "./styles/admin.css";
 import "./styles/admin-dashboard.css";
 import "./styles/citizen-dashboard.css";
+import "./styles/attachments.css";
 import App from "./App";
 import { AuthProvider } from "./context/AuthContext";
 

@@ -16,6 +16,16 @@ const STATUSES = [
 
 const PRIORITIES = ["low", "medium", "high", "urgent"];
 
+/** Categories a grievance can be filed under (the citizen form shows the same list). */
+const CATEGORIES = [
+    "Roads and Infrastructure",
+    "Water Supply",
+    "Electricity",
+    "Sanitation",
+    "Public Health",
+    "Other",
+];
+
 /**
  * Status transitions allowed through PATCH /api/grievances/:id/status.
  *
@@ -96,6 +106,7 @@ const remarksRequired = (from, to) =>
 module.exports = {
     STATUSES,
     PRIORITIES,
+    CATEGORIES,
     TRANSITIONS,
     ASSIGNABLE_STATUSES,
     PRIORITY_EDITABLE_STATUSES,

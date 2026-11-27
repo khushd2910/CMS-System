@@ -75,7 +75,7 @@ const check = async (name, fn) => {
     console.log("Creating grievances (priority fix)");
     let g1;
     await check("citizen-supplied priority is ignored; department request is only a hint", async () => {
-        const r = await call("POST", "/api/grievances", T.a, { title: "Leak", description: "Pipe burst", category: "Water", priority: "urgent", requestedDepartmentId: String(water._id), departmentId: String(water._id) });
+        const r = await call("POST", "/api/grievances", T.a, { title: "Water pipe leak", description: "A water pipe has burst near the main road", category: "Water Supply", priority: "urgent", requestedDepartmentId: String(water._id), departmentId: String(water._id) });
         assert.equal(r.status, 201);
         g1 = r.body.grievance;
         assert.equal(g1.priority, "medium");
@@ -87,8 +87,22 @@ const check = async (name, fn) => {
         assert.equal((await call("POST", "/api/grievances", T.mw, { title: "t", description: "d", category: "c" })).status, 403);
     });
     await check("admin may set priority when creating", async () => {
-        const r = await call("POST", "/api/grievances", T.admin, { title: "t", description: "d", category: "c", priority: "high" });
+        const r = await call("POST", "/api/grievances", T.admin, { title: "Admin filed case", description: "Filed by the admin to check priority", category: "Other", priority: "high" });
         assert.equal(r.body.grievance.priority, "high");
+    });
+    await check("the server rejects bad grievance input (browser checks are not enough)", async () => {
+        const good = { title: "Broken streetlight", description: "The streetlight on my road has not worked for a week", category: "Electricity" };
+        const bad = async (change) => (await call("POST", "/api/grievances", T.a, { ...good, ...change })).status;
+        assert.equal(await bad({ title: "Hi" }), 400, "title too short");
+        assert.equal(await bad({ title: "x".repeat(121) }), 400, "title too long");
+        assert.equal(await bad({ description: "too short" }), 400, "description too short");
+        assert.equal(await bad({ description: "d".repeat(5001) }), 400, "description too long");
+        assert.equal(await bad({ category: "Made up" }), 400, "unknown category");
+        assert.equal(await bad({ title: { $gt: "" } }), 400, "title must be text");
+        assert.equal(await bad({ requestedDepartmentId: "not-an-id" }), 400, "department id format");
+        assert.equal(await bad({ location: "Ahmedabad" }), 400, "location must be an object");
+        assert.equal(await bad({ location: { city: "x".repeat(101) } }), 400, "city too long");
+        assert.equal(await call("POST", "/api/grievances", T.a, good).then((r) => r.status), 201, "a good one still works");
     });
 
     console.log("Visibility (problem 2)");
@@ -198,7 +212,7 @@ const check = async (name, fn) => {
     console.log("Admin review, rejection, reassignment, priority");
     let g2;
     await check("admin: submitted -> under_review -> rejected (remarks required)", async () => {
-        g2 = (await call("POST", "/api/grievances", T.b, { title: "Noise", description: "d", category: "Other" })).body.grievance;
+        g2 = (await call("POST", "/api/grievances", T.b, { title: "Noise complaint", description: "Loud noise every night from a factory", category: "Other" })).body.grievance;
         const s = (to, r) => call("PATCH", `/api/grievances/${g2._id}/status`, T.admin, { status: to, remarks: r });
         assert.equal((await s("under_review")).status, 200);
         assert.equal((await s("rejected")).status, 400);
@@ -206,7 +220,7 @@ const check = async (name, fn) => {
         assert.equal((await s("under_review")).status, 400);
     });
     await check("reassignment needs remarks, resets to assigned, old manager loses access", async () => {
-        const g3 = (await call("POST", "/api/grievances", T.b, { title: "Road", description: "d", category: "Roads" })).body.grievance;
+        const g3 = (await call("POST", "/api/grievances", T.b, { title: "Road repair", description: "Large potholes on the road near the school", category: "Roads and Infrastructure" })).body.grievance;
         const assign = (dep, remarks) => call("PATCH", `/api/grievances/${g3._id}/assign-department`, T.admin, { departmentId: String(dep._id), remarks });
         assert.equal((await assign(water)).status, 200);
         assert.equal((await call("PATCH", `/api/grievances/${g3._id}/status`, T.mw, { status: "in_progress" })).status, 200);
@@ -220,7 +234,7 @@ const check = async (name, fn) => {
         assert.match(last.details, /from Water Supply to Public Works/);
     });
     await check("priority: admin and own-department manager can change it, logged in history", async () => {
-        const g4 = (await call("POST", "/api/grievances", T.a, { title: "P", description: "d", category: "c" })).body.grievance;
+        const g4 = (await call("POST", "/api/grievances", T.a, { title: "Priority test", description: "A grievance used to test priority changes", category: "Other" })).body.grievance;
         assert.equal((await call("PATCH", `/api/grievances/${g4._id}/priority`, T.admin, { priority: "urgent" })).status, 200);
         assert.equal((await call("PATCH", `/api/grievances/${g4._id}/priority`, T.admin, { priority: "urgent" })).status, 400);
         assert.equal((await call("PATCH", `/api/grievances/${g4._id}/priority`, T.admin, { priority: "critical" })).status, 400);

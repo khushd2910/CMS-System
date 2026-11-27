@@ -19,7 +19,7 @@
     "dev": "nodemon index.js",
     "seed": "node scripts/seed.js",
     "test": "node tests/workflow.test.js",
-    "test:unit": "node tests/admin-login-utils.test.js",
+    "test:unit": "node tests/admin-login-utils.test.js && node tests/grievance-input.test.js",
     "test:citizen": "node tests/citizen-auth.test.js",
     "test:staff": "node tests/staff-login.test.js",
     "test:session": "node tests/session-security.test.js",

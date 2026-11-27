@@ -20,6 +20,12 @@ export const adminService = {
   updateManager: (id, payload) =>
     request(`/admin/managers/${encodeURIComponent(id)}`, { method: "PATCH", auth: true, body: payload }),
   grievances: (params) => request(`/grievances${queryString(params)}`, { auth: true }),
+  // One grievance with its full history and the status changes this admin may make right now.
+  grievance: (id) => request(`/grievances/${encodeURIComponent(id)}`, { auth: true }),
+  updateGrievanceStatus: (id, payload) =>
+    request(`/grievances/${encodeURIComponent(id)}/status`, { method: "PATCH", auth: true, body: payload }),
+  updateGrievancePriority: (id, payload) =>
+    request(`/grievances/${encodeURIComponent(id)}/priority`, { method: "PATCH", auth: true, body: payload }),
   assignGrievance: (id, payload) =>
     request(`/grievances/${encodeURIComponent(id)}/assign-department`, {
       method: "PATCH",
