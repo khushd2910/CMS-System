@@ -10,6 +10,7 @@ import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
 import { CITIZEN_HOME_PATH, homePathForRole } from "../config/auth.config";
 import { formatWait } from "../hooks/useCooldown";
+import { redirectTarget } from "../utils/redirect";
 import { useResendCode } from "../hooks/useResendCode";
 import { validateCaptchaAnswer, validateIdentifier, validatePassword } from "../utils/validators";
 
@@ -59,7 +60,13 @@ export default function CitizenLogin() {
 
   // Already signed in? Go to the landing page for THIS person's role (a citizen, admin or manager
   // each has their own), not always the citizen area.
-  if (status === "authenticated") return <Navigate to={homePathForRole(user?.role)} replace />;
+  //
+  // ONE place decides where a citizen goes next, and both the automatic redirect below (it fires the moment
+  // signing in succeeds) and the navigate() after login use it. Before, they disagreed: the first one always
+  // sent people to the dashboard, so "return to the page you wanted" only worked by luck of timing.
+  const afterLogin = redirectTarget(location.state?.from, { prefix: "/citizen", fallback: CITIZEN_HOME_PATH });
+  if (status === "authenticated") return <Navigate to={user?.role === "citizen" ? afterLogin : homePathForRole(user?.role)} replace />;
+  const sessionExpired = Boolean(location.state?.expired);
 
   const resendWait = resend.secondsLeftFor(form.identifier);
 
@@ -122,7 +129,7 @@ export default function CitizenLogin() {
         captchaAnswer: form.captchaAnswer.trim(),
       });
       // Send the person back to the page they originally wanted, if any.
-      navigate(location.state?.from?.pathname || CITIZEN_HOME_PATH, { replace: true });
+      navigate(afterLogin, { replace: true });
     } catch (error) {
       setFormError(describeLoginError(error));
       const emailNotVerified = error.status === 403 && error.serverCode === "EMAIL_NOT_VERIFIED";
@@ -144,6 +151,7 @@ export default function CitizenLogin() {
           <p className="card__subtitle">Sign in to submit grievances and track their progress.</p>
 
           <form className="login-form" onSubmit={handleSubmit} noValidate>
+            {sessionExpired && !formError && <Alert title="Session expired">Your session has ended. Please sign in again to continue.</Alert>}
             {formError && <Alert title="Sign in failed">{formError}</Alert>}
             {needsVerification && (
               <div className="info-line">

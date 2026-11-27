@@ -18,7 +18,7 @@ const publicUser = (user) => ({
 });
 
 const createToken = (user) =>
-    jwt.sign({ userId: user._id.toString(), role: user.role }, getSecret(), {
+    jwt.sign({ userId: user._id.toString(), role: user.role, tv: user.tokenVersion || 0 }, getSecret(), {
         expiresIn: process.env.JWT_EXPIRES_IN || "1d",
     });
 
@@ -555,10 +555,12 @@ const resetPassword = async (req, res, next) => {
         }
 
         user.password = await bcrypt.hash(password, 12);
+        // Signs out every device: tokens issued before this carry the old number (see middleware/auth.js).
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
         user.passwordResetTokenHash = undefined;
         user.passwordResetExpires = undefined;
         await user.save();
-        await recordAudit(req, { event: "password_reset", user, details: "Password changed with an emailed reset link." });
+        await recordAudit(req, { event: "password_reset", user, details: "Password changed with an emailed reset link. All existing sessions were signed out." });
         return res.json({ message: "Password has been reset successfully." });
     } catch (error) {
         return next(error);

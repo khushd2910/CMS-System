@@ -8,6 +8,7 @@ import Alert from "../ui/Alert";
 import CaptchaField, { useCaptcha } from "../ui/CaptchaField";
 import { useAuth } from "../../context/AuthContext";
 import { validateCaptchaAnswer, validatePassword } from "../../utils/validators";
+import { redirectTarget } from "../../utils/redirect";
 
 const EMPTY_FORM = { identifier: "", password: "", captchaAnswer: "" };
 const NO_ERRORS = { identifier: "", password: "", captchaAnswer: "" };
@@ -57,7 +58,11 @@ export default function StaffLoginPage({ config }) {
   const captchaRef = useRef(null);
 
   // Only an already signed-in person with THIS role skips this page. A signed-in citizen still sees the form.
-  if (status === "authenticated" && user?.role === config.role) return <Navigate to={config.homePath} replace />;
+  // The same target is used for this automatic redirect (it fires the moment sign-in succeeds) and for the
+  // navigate() after sign-in, so they can never disagree. See utils/redirect.js for what is allowed.
+  const afterLogin = redirectTarget(location.state?.from, { prefix: config.pathPrefix, fallback: config.homePath });
+  if (status === "authenticated" && user?.role === config.role) return <Navigate to={afterLogin} replace />;
+  const sessionExpired = Boolean(location.state?.expired);
 
   const validators = {
     identifier: config.validateIdentifier,
@@ -95,9 +100,7 @@ export default function StaffLoginPage({ config }) {
         captchaId: captcha.id,
         captchaAnswer: form.captchaAnswer.trim(),
       });
-      navigate(location.state?.from?.pathname?.startsWith(config.pathPrefix) ? location.state.from.pathname : config.homePath, {
-        replace: true,
-      });
+      navigate(afterLogin, { replace: true });
     } catch (error) {
       setFormError(describeLoginError(error, config.invalidMessage));
       // A CAPTCHA works once, so a new one is always fetched; a wrong password is never kept.
@@ -118,6 +121,7 @@ export default function StaffLoginPage({ config }) {
           </h1>
 
           <form className="admin-form" onSubmit={handleSubmit} noValidate>
+            {sessionExpired && !formError && <Alert title="Session expired">Your session has ended. Please sign in again to continue.</Alert>}
             {formError && <Alert title="Sign in failed">{formError}</Alert>}
 
             <TextField

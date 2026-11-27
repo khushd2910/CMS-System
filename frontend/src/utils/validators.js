@@ -81,7 +81,7 @@ export function passwordStrength(value) {
 // The backend identifies admins by email only (there is no separate Admin ID field yet).
 export function validateAdminIdentifier(raw) {
   const value = raw.trim();
-  if (!value) return "Enter your Admin Email / ID.";
+  if (!value) return SUPPORTS_ADMIN_ID_LOGIN ? "Enter your Admin Email / ID." : "Enter your admin email address.";
   if (!value.includes("@")) {
     return SUPPORTS_ADMIN_ID_LOGIN ? "" : "Enter your registered admin email address.";
   }
@@ -94,7 +94,7 @@ export function validateCaptchaAnswer(raw) {
 
 export function validateManagerIdentifier(raw) {
   const value = raw.trim();
-  if (!value) return "Enter your registered email or Manager ID.";
+  if (!value) return SUPPORTS_MANAGER_ID_LOGIN ? "Enter your registered email or Manager ID." : "Enter your registered email address.";
   if (!value.includes("@")) {
     return SUPPORTS_MANAGER_ID_LOGIN ? "" : "Enter your registered email address.";
   }

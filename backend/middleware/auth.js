@@ -32,6 +32,12 @@ const authenticate = async (req, res, next) => {
             return res.status(401).json({ message: "User account no longer exists." });
         }
 
+        // A token made before the last password reset is no longer valid. Tokens issued before this
+        // feature existed have no "tv" and count as version 0.
+        if ((payload.tv || 0) !== (user.tokenVersion || 0)) {
+            return res.status(401).json({ message: "Your session has ended. Please sign in again." });
+        }
+
         req.user = user;
         return next();
     } catch (error) {

@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { authService } from "../services/authService";
 import { tokenStorage } from "../services/tokenStorage";
+import { onSessionEnded } from "../services/apiClient";
+import { tokenExpiryMs } from "../utils/jwt";
 import { ADMIN_PORTAL_ROLES, CITIZEN_PORTAL_ROLES, MANAGER_PORTAL_ROLES } from "../config/auth.config";
 
 const AuthContext = createContext(null);
@@ -11,6 +13,37 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [status, setStatus] = useState(() => (tokenStorage.get() ? "checking" : "anonymous"));
+  // true after a saved login stopped working (expired, or ended by a password reset). Login pages show a notice.
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  // Signs the person out on screen WITHOUT calling the server (the server already said the token is dead).
+  const endSession = useCallback(() => {
+    tokenStorage.clear();
+    setUser(null);
+    setStatus("anonymous");
+    setSessionExpired(true);
+  }, []);
+
+  // 1) Any API call that comes back 401 ends the session.
+  useEffect(() => onSessionEnded(endSession), [endSession]);
+
+  // 2) Even if the person never clicks anything, sign them out the moment the token expires
+  //    (and re-check when they come back to a tab that was asleep: timers pause in background tabs).
+  useEffect(() => {
+    if (status !== "authenticated") return undefined;
+    const check = () => {
+      const expiresAt = tokenExpiryMs(tokenStorage.get());
+      if (expiresAt !== null && Date.now() >= expiresAt) endSession();
+    };
+    const expiresAt = tokenExpiryMs(tokenStorage.get());
+    // setTimeout cannot wait longer than about 24.8 days; longer waits are simply re-checked on return to the tab.
+    const timer = expiresAt === null ? null : setTimeout(check, Math.min(Math.max(expiresAt - Date.now(), 0) + 500, 2 ** 31 - 1));
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [status, endSession]);
 
   // On first load: if a token was saved earlier, confirm it with GET /api/auth/me.
   useEffect(() => {
@@ -27,6 +60,7 @@ export function AuthProvider({ children }) {
         if (controller.signal.aborted) return;
         // Only throw the token away when the server says it is no longer valid.
         // If the server is just unreachable, keep it for the next attempt.
+        // (A 401 also reaches endSession() through the API client, which clears the token and flags the expiry.)
         if (error.status === 401) tokenStorage.clear();
         setStatus("anonymous");
       });
@@ -52,6 +86,7 @@ export function AuthProvider({ children }) {
     }
 
     tokenStorage.set(token, remember);
+    setSessionExpired(false);
     setUser(loggedInUser);
     setStatus("authenticated");
     return loggedInUser;
@@ -68,6 +103,7 @@ export function AuthProvider({ children }) {
       throw error;
     }
     tokenStorage.set(token, false);
+    setSessionExpired(false);
     setUser(staffUser);
     setStatus("authenticated");
     return staffUser;
@@ -100,6 +136,7 @@ export function AuthProvider({ children }) {
     }
 
     tokenStorage.set(token, false);
+    setSessionExpired(false);
     setUser(verifiedUser);
     setStatus("authenticated");
   }, []);
@@ -117,13 +154,14 @@ export function AuthProvider({ children }) {
       // Even if this fails we still sign the person out on this device.
     }
     tokenStorage.clear();
+    setSessionExpired(false); // signing out on purpose is not an expiry
     setUser(null);
     setStatus("anonymous");
   }, []);
 
   const value = useMemo(() => ({
-    user, status, login, adminLogin, managerLogin, register, verifyEmail, logout,
-  }), [user, status, login, adminLogin, managerLogin, register, verifyEmail, logout]);
+    user, status, sessionExpired, login, adminLogin, managerLogin, register, verifyEmail, logout,
+  }), [user, status, sessionExpired, login, adminLogin, managerLogin, register, verifyEmail, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -1,5 +1,5 @@
 import StaffLoginPage from "../components/auth/StaffLoginPage";
-import { ADMIN_HOME_PATH } from "../config/auth.config";
+import { ADMIN_HOME_PATH, SUPPORTS_ADMIN_ID_LOGIN } from "../config/auth.config";
 import { validateAdminIdentifier } from "../utils/validators";
 
 const CONFIG = {
@@ -8,9 +8,10 @@ const CONFIG = {
   loginAction: "adminLogin",
   homePath: ADMIN_HOME_PATH,
   pathPrefix: "/admin",
-  identifierPlaceholder: "Admin Email / ID",
+  // Only mention an ID when the backend can really sign someone in with one (see config/auth.config.js).
+  identifierPlaceholder: SUPPORTS_ADMIN_ID_LOGIN ? "Admin Email / ID" : "Admin Email",
   validateIdentifier: validateAdminIdentifier,
-  invalidMessage: "Invalid Admin ID or Password.",
+  invalidMessage: SUPPORTS_ADMIN_ID_LOGIN ? "Invalid Admin ID or Password." : "Invalid email or password.",
   securityLines: [
     "This portal is for authorised government officials only.",
     "All activities are monitored and logged for security purposes.",

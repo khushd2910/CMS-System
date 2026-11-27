@@ -124,3 +124,16 @@ Also fixed: resolved -> closed no longer erases `resolvedAt`.
 - The admin/manager login screens show "try again in about N minutes" using the real remaining time.
 - `resend-verification` kept its own small in-memory limit (5 per IP + e-mail per 15 minutes).
 - Tests: `npm run test:all` runs every suite. `test:staff` is new (20 checks); `test:unit` now covers the CAPTCHA and the TRUST_PROXY parser.
+
+
+## Login and session fixes
+- **Password length limit.** `passwordPolicyError` (`utils/password.js`) now refuses passwords over 72 BYTES (bcrypt ignores everything after that). Applies to admin-created users and password reset. The frontend uses the same number (`utils/passwordRules.js`).
+- **Password reset signs out every device.** `User.tokenVersion` (default 0) goes up by one on every reset. Login tokens carry it (`tv`); `middleware/auth.js` answers 401 to a token whose number is old. Old tokens issued before this change have no `tv` and count as 0, so existing sessions keep working until the first reset.
+- **`npm run seed` no longer resets the admin password.** If the admin already exists the password is left alone. To change it on purpose: `RESET_ADMIN_PASSWORD=true npm run seed` (this also signs out its old sessions). The seed never turns an existing citizen/manager into an admin, and `ADMIN_PASSWORD` is only needed when creating or resetting.
+- Test: `npm run test:session` (needs `MONGO_DB_NAME` containing "test", like the other suites).
+
+## Frontend (login / sessions)
+- **Expired sessions.** Any API call that returns 401 while a token was sent signs the person out on screen (`services/apiClient.js` -> `AuthContext.endSession`), and the token is also timed against its own expiry, so an idle page signs out by itself. The login page then shows "Session expired" and returns to the page they were on.
+- **Return-to-previous-page.** Citizen, admin and manager login all use `utils/redirect.js`. Before, the automatic redirect (fires the moment login succeeds) always went to the dashboard and raced the "go back" navigation.
+- **No more "ID" login promise.** Placeholders and messages say "Admin Email" / "Registered Email" while `SUPPORTS_*_ID_LOGIN` is false in `config/auth.config.js`; flip the flag when ID login exists and the old wording returns.
+- Tests: `npm test` in `frontend/`.

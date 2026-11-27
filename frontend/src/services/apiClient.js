@@ -4,6 +4,16 @@ import { tokenStorage } from "./tokenStorage";
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
 const TIMEOUT_MS = 15000;
 
+// The app registers one function here (AuthContext). It is called when the server says "401" to a request that
+// carried a login token: the session has expired, or was ended (for example by a password reset).
+let sessionEndedHandler = null;
+export function onSessionEnded(handler) {
+  sessionEndedHandler = handler;
+  return () => {
+    if (sessionEndedHandler === handler) sessionEndedHandler = null;
+  };
+}
+
 export class ApiError extends Error {
   // status 0 means the request never reached the server.
   constructor({ status, message, code, details, serverCode, serverData, retryAfterSeconds }) {
@@ -18,12 +28,14 @@ export class ApiError extends Error {
   }
 }
 
-export async function request(path, { method = "GET", body, auth = false, signal } = {}) {
+// notifyOnExpiry: set to false for a call where a 401 is expected and means nothing (e.g. signing out).
+export async function request(path, { method = "GET", body, auth = false, signal, notifyOnExpiry = true } = {}) {
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
+  let sentToken = null;
   if (auth) {
-    const token = tokenStorage.get();
-    if (token) headers.Authorization = `Bearer ${token}`;
+    sentToken = tokenStorage.get();
+    if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
   }
 
   // Abort the request if the server takes too long, or if the caller cancels.
@@ -63,6 +75,11 @@ export async function request(path, { method = "GET", body, auth = false, signal
   }
 
   if (!response.ok) {
+    // A 401 on a request that sent a token = the login is no longer valid. Only react if it is still the SAME
+    // token (the person may have signed in again while this request was running).
+    if (response.status === 401 && sentToken && notifyOnExpiry && tokenStorage.get() === sentToken) {
+      sessionEndedHandler?.();
+    }
     // On "too many attempts" (429) the server says how long to wait, in a header and in the body.
     const headerSeconds = Number(response.headers.get("Retry-After"));
     throw new ApiError({

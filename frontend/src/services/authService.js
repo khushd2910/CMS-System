@@ -42,5 +42,5 @@ export const authService = {
   me: (options) => request("/auth/me", { auth: true, ...options }),
 
   // -> { message }
-  logout: () => request("/auth/logout", { method: "POST", auth: true }),
+  logout: () => request("/auth/logout", { method: "POST", auth: true, notifyOnExpiry: false }),
 };

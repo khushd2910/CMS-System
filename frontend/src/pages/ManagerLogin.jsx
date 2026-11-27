@@ -1,5 +1,5 @@
 import StaffLoginPage from "../components/auth/StaffLoginPage";
-import { MANAGER_HOME_PATH } from "../config/auth.config";
+import { MANAGER_HOME_PATH, SUPPORTS_MANAGER_ID_LOGIN } from "../config/auth.config";
 import { validateManagerIdentifier } from "../utils/validators";
 
 const CONFIG = {
@@ -8,9 +8,9 @@ const CONFIG = {
   loginAction: "managerLogin",
   homePath: MANAGER_HOME_PATH,
   pathPrefix: "/manager",
-  identifierPlaceholder: "Registered Email / Manager ID",
+  identifierPlaceholder: SUPPORTS_MANAGER_ID_LOGIN ? "Registered Email / Manager ID" : "Registered Email",
   validateIdentifier: validateManagerIdentifier,
-  invalidMessage: "Invalid Manager ID or Password.",
+  invalidMessage: SUPPORTS_MANAGER_ID_LOGIN ? "Invalid Manager ID or Password." : "Invalid email or password.",
   securityLines: [
     "This portal is for authorised department officials only. Access is restricted to department managers.",
   ],

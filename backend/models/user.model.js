@@ -61,6 +61,14 @@ const userSchema = new mongoose.Schema(
             required: true,
             select: false,
         },
+        // Goes up by one every time the password is reset. Every login token carries the number it was issued
+        // with, so raising it signs out every device that was already logged in (see middleware/auth.js).
+        // Accounts created before this field existed count as 0.
+        tokenVersion: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
         passwordResetTokenHash: {
             type: String,
             select: false,
