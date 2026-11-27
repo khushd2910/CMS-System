@@ -127,6 +127,11 @@ export function AuthProvider({ children }) {
     (challengeId) => authService.resendAdminLoginOtp({ challengeId }),
     []
   );
+  const updateProfile = useCallback(async (payload) => {
+    const result = await authService.updateProfile(payload);
+    setUser(result.user);
+    return result;
+  }, []);
   const managerLogin = useCallback(
     (credentials) => staffSignIn(authService.managerLogin(credentials), MANAGER_PORTAL_ROLES),
     [staffSignIn]
@@ -174,8 +179,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, logout,
-  }), [user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, logout]);
+    user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, updateProfile, logout,
+  }), [user, status, sessionExpired, login, adminLogin, verifyAdminOtp, resendAdminOtp, managerLogin, register, verifyEmail, updateProfile, logout]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

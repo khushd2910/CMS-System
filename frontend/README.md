@@ -1,6 +1,6 @@
 # Grievance Redressal Portal – Frontend
 
-React (Vite) frontend for the CMS project. Current modules include **Citizen Login and Registration**, **Admin Login and Dashboard**, and **Department Manager Login**.
+React (Vite) frontend for the CMS project. Current modules include **Citizen Login, Registration and Dashboard**, **Admin Login and Dashboard**, and **Department Manager Login**.
 
 ## Run it
 
@@ -60,6 +60,13 @@ src/
 
 - Calls `GET /api/auth/captcha` and submits its one-use challenge with credentials to `POST /api/auth/login`.
 - CAPTCHA challenges expire after five minutes. A new challenge is fetched after each failed attempt.
+
+## Citizen Dashboard notes
+
+- `/citizen/dashboard` shows account-scoped grievance totals, the latest three grievances and notifications.
+- Quick services link to grievance submission, reference tracking, paginated history, and profile updates. Detail pages show the current status and its history; notifications can be marked read.
+- Dashboard totals come from `GET /api/grievances/dashboard`; grievance lists and details use the same citizen ownership checks as the API.
+- Profile updates allow a citizen to change their name and address. The verified email address cannot be edited from this page.
 
 ## Department Manager Login notes
 

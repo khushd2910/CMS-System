@@ -3,6 +3,7 @@ const { authenticate, requireRole } = require("../middleware/auth");
 const {
     createGrievance,
     listGrievances,
+    getCitizenDashboard,
     getGrievance,
     getGrievanceHistory,
     updateGrievanceStatus,
@@ -13,6 +14,7 @@ const {
 const router = express.Router();
 
 router.post("/", authenticate, requireRole("citizen", "admin"), createGrievance);
+router.get("/dashboard", authenticate, requireRole("citizen"), getCitizenDashboard);
 router.get("/", authenticate, listGrievances);
 router.get("/:id/history", authenticate, getGrievanceHistory);
 router.get("/:id", authenticate, getGrievance);

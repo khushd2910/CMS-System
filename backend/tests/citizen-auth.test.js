@@ -23,18 +23,19 @@ const sentVerificationCodes = [];
 let deliverVerificationCode = async (message) => sentVerificationCodes.push(message);
 emailService.sendVerificationEmail = (message) => deliverVerificationCode(message);
 const { app } = require("../index");
-const { User, PendingRegistration, Department, LoginAttempt } = require("../models");
+const { User, PendingRegistration, Department, LoginAttempt, Grievance, Notification } = require("../models");
 const { _createForTests } = require("../utils/captcha");
 
 let server, base;
 let ipSequence = 1;
 const nextIp = () => `198.51.100.${ipSequence++}`;
-const call = async (method, path, body, ip) => {
+const call = async (method, path, body, ip, token) => {
     const res = await fetch(base + path, {
         method,
         headers: {
             "Content-Type": "application/json",
             ...(ip ? { "X-Forwarded-For": ip } : {}),
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
     });
@@ -63,6 +64,7 @@ const registration = (overrides = {}) => ({
     ...overrides,
 });
 let passed = 0;
+let citizenToken = "";
 const check = async (name, fn) => {
     try { await fn(); passed++; console.log(`  ok   ${name}`); }
     catch (error) { console.log(`  FAIL ${name}\n       ${error.message}`); process.exitCode = 1; }
@@ -89,8 +91,65 @@ const check = async (name, fn) => {
         const signedIn = await citizenLogin({ identifier: "citizen@t.in", password: "Passw0rd!" });
         assert.equal(signedIn.status, 200);
         assert.equal(signedIn.body.user.role, "citizen");
+        citizenToken = signedIn.body.token;
         const mobileIdentifier = await citizenLogin({ identifier: "9876543210", password: "Passw0rd!" });
         assert.equal(mobileIdentifier.status, 401);
+    });
+    await check("citizen dashboard returns only the signed-in citizen's totals and recent items", async () => {
+        const citizen = await User.findOne({ email: "citizen@t.in" });
+        const other = await User.create({
+            name: "Other Citizen",
+            email: "other-citizen@t.in",
+            role: "citizen",
+            password: passwordHash,
+        });
+        const ownedGrievances = await Grievance.create([
+            { referenceNumber: "GRV-CIT-001", title: "Submitted issue", description: "A citizen issue", category: "Roads", citizenId: citizen._id, status: "submitted" },
+            { referenceNumber: "GRV-CIT-002", title: "Assigned issue", description: "A citizen issue", category: "Water", citizenId: citizen._id, status: "assigned" },
+            { referenceNumber: "GRV-CIT-003", title: "Ongoing issue", description: "A citizen issue", category: "Water", citizenId: citizen._id, status: "in_progress" },
+            { referenceNumber: "GRV-CIT-004", title: "Resolved issue", description: "A citizen issue", category: "Roads", citizenId: citizen._id, status: "resolved" },
+            { referenceNumber: "GRV-OTHER-001", title: "Private issue", description: "Another citizen issue", category: "Roads", citizenId: other._id },
+        ]);
+        await Notification.create([
+            { userId: citizen._id, grievanceId: ownedGrievances[0]._id, message: "Your grievance was received." },
+            { userId: other._id, grievanceId: ownedGrievances[4]._id, message: "This belongs to another citizen." },
+        ]);
+
+        assert.equal((await call("GET", "/api/grievances/dashboard")).status, 401);
+        const response = await call("GET", "/api/grievances/dashboard", undefined, undefined, citizenToken);
+        assert.equal(response.status, 200);
+        assert.deepEqual(response.body.stats, { total: 4, pending: 2, inProgress: 1, resolved: 1 });
+        assert.equal(response.body.recentGrievances.length, 3);
+        assert.equal(response.body.recentGrievances.some((item) => item.referenceNumber === "GRV-OTHER-001"), false);
+        assert.equal(response.body.recentNotifications.length, 1);
+        assert.equal(response.body.unreadCount, 1);
+    });
+    await check("citizens can update name and address but not their verified email", async () => {
+        const response = await call("PATCH", "/api/auth/me", {
+            name: "Updated Citizen",
+            email: "changed@example.test",
+            contactNumber: "123456789",
+            address: {
+                state: "Gujarat",
+                district: "Ahmedabad",
+                cityOrTaluka: "Bavla",
+                line: "12 Updated Road",
+                pinCode: "380001",
+            },
+        }, undefined, citizenToken);
+        assert.equal(response.status, 200);
+        assert.equal(response.body.user.name, "Updated Citizen");
+        assert.equal(response.body.user.email, "citizen@t.in");
+        const saved = await User.findOne({ email: "citizen@t.in" });
+        assert.equal(saved.name, "Updated Citizen");
+        assert.equal(saved.address.line, "12 Updated Road");
+        assert.equal(saved.contactNumber, undefined);
+        assert.equal(await User.exists({ email: "changed@example.test" }), null);
+
+        const invalid = await call("PATCH", "/api/auth/me", {
+            address: { state: "Gujarat", district: "Ahmedabad", cityOrTaluka: "Bavla", line: "Road", pinCode: "bad" },
+        }, undefined, citizenToken);
+        assert.equal(invalid.status, 400);
     });
     await check("staff accounts are refused on the citizen login endpoint", async () => {
         const wrong = await citizenLogin({ identifier: "citizen@t.in", password: "incorrect" });

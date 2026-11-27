@@ -123,6 +123,41 @@ const listGrievances = async (req, res, next) => {
     }
 };
 
+const getCitizenDashboard = async (req, res, next) => {
+    try {
+        const citizenId = req.user._id;
+        const [statusCounts, recentGrievances, recentNotifications, unreadCount] = await Promise.all([
+            Grievance.aggregate([
+                { $match: { citizenId } },
+                { $group: { _id: "$status", count: { $sum: 1 } } },
+            ]),
+            Grievance.find({ citizenId })
+                .populate("departmentId", "name")
+                .sort({ createdAt: -1 })
+                .limit(3),
+            Notification.find({ userId: citizenId })
+                .populate("grievanceId", "referenceNumber title status")
+                .sort({ createdAt: -1 })
+                .limit(3),
+            Notification.countDocuments({ userId: citizenId, isRead: false }),
+        ]);
+        const counts = Object.fromEntries(statusCounts.map(({ _id, count }) => [_id, count]));
+        const pending = (counts.submitted || 0) + (counts.under_review || 0) + (counts.assigned || 0);
+        const inProgress = counts.in_progress || 0;
+        const resolved = (counts.resolved || 0) + (counts.closed || 0);
+        const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+        return res.json({
+            stats: { total, pending, inProgress, resolved },
+            recentGrievances,
+            recentNotifications,
+            unreadCount,
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
 const getGrievance = async (req, res, next) => {
     try {
         const grievance = await withRelations(Grievance.findById(req.params.id));
@@ -407,6 +442,7 @@ const updateGrievancePriority = async (req, res, next) => {
 module.exports = {
     createGrievance,
     listGrievances,
+    getCitizenDashboard,
     getGrievance,
     getGrievanceHistory,
     updateGrievanceStatus,

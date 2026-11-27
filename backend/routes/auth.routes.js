@@ -1,9 +1,10 @@
 const express = require("express");
-const { authenticate } = require("../middleware/auth");
+const { authenticate, requireRole } = require("../middleware/auth");
 const {
     register,
     login,
     getMe,
+    updateCitizenProfile,
     logout,
     forgotPassword,
     resetPassword,
@@ -28,6 +29,7 @@ router.post("/admin-login/verify-otp", verifyAdminLoginOtp);
 router.post("/admin-login/resend-otp", resendAdminLoginOtp);
 router.post("/manager-login", managerLogin);
 router.get("/me", authenticate, getMe);
+router.patch("/me", authenticate, requireRole("citizen"), updateCitizenProfile);
 router.post("/logout", authenticate, logout);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);

@@ -53,7 +53,6 @@ export default function StaffLoginPage({ config }) {
   const [errors, setErrors] = useState(NO_ERRORS);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
   const identifierRef = useRef(null);
   const passwordRef = useRef(null);
   const captchaRef = useRef(null);

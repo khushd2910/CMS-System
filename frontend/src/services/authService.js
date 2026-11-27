@@ -46,6 +46,7 @@ export const authService = {
 
   // -> { user }   (needs the Bearer token)
   me: (options) => request("/auth/me", { auth: true, ...options }),
+  updateProfile: (payload) => request("/auth/me", { method: "PATCH", auth: true, body: payload }),
 
   // -> { message }
   logout: () => request("/auth/logout", { method: "POST", auth: true, notifyOnExpiry: false }),

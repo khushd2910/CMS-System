@@ -519,7 +519,71 @@ const resendVerification = async (req, res, next) => {
     }
 };
 
-const getMe = (req, res) => res.json({ user: publicUser(req.user) });
+const getMe = (req, res) => res.json({
+    user: {
+        ...publicUser(req.user),
+        ...(req.user.role === "citizen" ? { address: req.user.address || {} } : {}),
+    },
+});
+
+const updateCitizenProfile = async (req, res, next) => {
+    try {
+        const body = req.body;
+        if (!body || typeof body !== "object" || Array.isArray(body)) {
+            return res.status(400).json({ message: "Profile details are required." });
+        }
+
+        const updates = {};
+        if (body.name !== undefined) {
+            const name = clean(body.name);
+            if (name.length < 2 || name.length > 120) {
+                return res.status(400).json({ message: "Name must be between 2 and 120 characters." });
+            }
+            updates.name = name;
+        }
+        if (body.address !== undefined) {
+            if (!body.address || typeof body.address !== "object" || Array.isArray(body.address)) {
+                return res.status(400).json({ message: "Address details are invalid." });
+            }
+            const address = {
+                state: clean(body.address.state),
+                district: clean(body.address.district),
+                cityOrTaluka: clean(body.address.cityOrTaluka),
+                villageOrWard: clean(body.address.villageOrWard),
+                line: clean(body.address.line),
+                landmark: clean(body.address.landmark),
+                pinCode: clean(body.address.pinCode),
+            };
+            if (!address.state || !address.district || !address.cityOrTaluka || !address.line) {
+                return res.status(400).json({
+                    message: "State, district, city or taluka, and complete address are required.",
+                });
+            }
+            if (!/^[1-9]\d{5}$/.test(address.pinCode)) {
+                return res.status(400).json({ message: "PIN code must be 6 digits." });
+            }
+            if (Object.values(address).some((value) => value.length > 250)) {
+                return res.status(400).json({ message: "Address fields must be 250 characters or fewer." });
+            }
+            updates.address = address;
+        }
+        if (!Object.keys(updates).length) {
+            return res.status(400).json({ message: "Provide a name or address to update." });
+        }
+
+        const user = await User.findOne({ _id: req.user._id, role: "citizen" });
+        if (!user) return res.status(404).json({ message: "Citizen account not found." });
+        if (updates.name !== undefined) user.name = updates.name;
+        if (updates.address !== undefined) user.address = updates.address;
+        await user.save();
+        return res.json({
+            message: "Profile updated successfully.",
+            user: { ...publicUser(user), address: user.address || {} },
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
 
 const logout = async (req, res) => {
     if (req.user && req.user.role !== "citizen") await recordAudit(req, { event: "staff_logout" });
@@ -937,5 +1001,6 @@ const managerLogin = createStaffLogin("manager", "Invalid Manager ID or Password
 
 module.exports = {
     register, login, getMe, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
+    updateCitizenProfile, logout, forgotPassword, resetPassword, getCaptcha, adminLogin, managerLogin,
     verifyEmailCode, resendVerification, verifyAdminLoginOtp, resendAdminLoginOtp,
 };

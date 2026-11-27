@@ -10,6 +10,12 @@ import ManagerLogin from "./pages/ManagerLogin";
 import VerifyEmail from "./pages/VerifyEmail";
 import ManagerDashboard from "./pages/ManagerDashboard";
 import CitizenDashboard from "./pages/CitizenDashboard";
+import CitizenGrievanceHistory from "./pages/citizen/CitizenGrievanceHistory";
+import CitizenGrievanceDetail from "./pages/citizen/CitizenGrievanceDetail";
+import CitizenNewGrievance from "./pages/citizen/CitizenNewGrievance";
+import CitizenNotifications from "./pages/citizen/CitizenNotifications";
+import CitizenProfile from "./pages/citizen/CitizenProfile";
+import CitizenTrackGrievance from "./pages/citizen/CitizenTrackGrievance";
 import ComingSoon from "./pages/ComingSoon";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
@@ -33,6 +39,30 @@ export default function App() {
             <CitizenDashboard />
           </ProtectedRoute>
         }
+      />
+      <Route
+        path="/citizen/grievances/new"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenNewGrievance /></ProtectedRoute>}
+      />
+      <Route
+        path="/citizen/grievances"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenGrievanceHistory /></ProtectedRoute>}
+      />
+      <Route
+        path="/citizen/grievances/:id"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenGrievanceDetail /></ProtectedRoute>}
+      />
+      <Route
+        path="/citizen/track"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenTrackGrievance /></ProtectedRoute>}
+      />
+      <Route
+        path="/citizen/notifications"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenNotifications /></ProtectedRoute>}
+      />
+      <Route
+        path="/citizen/profile"
+        element={<ProtectedRoute roles={["citizen"]}><CitizenProfile /></ProtectedRoute>}
       />
 
       <Route path="/admin/login" element={<AdminLogin />} />
